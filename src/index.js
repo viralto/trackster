@@ -96,8 +96,8 @@ async function route(request, env, user) {
   }
 
   if (method === "GET" && path === "/api/shipments") return listShipments(env, user);
-  if (method === "GET" && path === "/api/settings") return getSettings(env);
-  if (method === "POST" && path === "/api/settings") return postSettings(request, env);
+  if (method === "GET" && path === "/api/settings") return getSettings(env, user);
+  if (method === "POST" && path === "/api/settings") return postSettings(request, env, user);
   if (method === "POST" && path === "/api/settings/test") return testEmail(env, user);
   if (method === "POST" && path === "/api/shipments") return addShipments(request, env, user);
 
@@ -637,12 +637,12 @@ async function emailStatus(env, settings) {
   };
 }
 
-async function getSettings(env) {
+async function getSettings(env, user) {
   const settings = await loadSettings(env);
-  return json({ settings, status: await emailStatus(env, settings) });
+  return json({ settings, status: await emailStatus(env, settings), user: user.email });
 }
 
-async function postSettings(request, env) {
+async function postSettings(request, env, user) {
   let body;
   try {
     body = await request.json();
@@ -650,7 +650,7 @@ async function postSettings(request, env) {
     return json({ error: "Could not read that." }, 400);
   }
   const settings = await saveSettings(env, body && body.settings);
-  return json({ settings, status: await emailStatus(env, settings) });
+  return json({ settings, status: await emailStatus(env, settings), user: user.email });
 }
 
 async function testEmail(env, user) {

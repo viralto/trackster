@@ -1,5 +1,7 @@
 // The Settings page: who gets alert emails, about what, and when.
 
+import { THEME_HEAD, THEME_CSS, WHO_JS, sidebar } from "./theme.js";
+
 export const SETTINGS_PAGE = `<!doctype html>
 <html lang="en-GB">
 <head>
@@ -7,69 +9,50 @@ export const SETTINGS_PAGE = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Alert settings</title>
+${THEME_HEAD}
 <style>
-  :root { --bg:#f6f5f2; --card:#fff; --ink:#1c1b19; --muted:#6b6860; --line:#e2dfd8; --accent:#1f5fbf;
-    --warn-bg:#fdf0d2; --warn-ink:#7a5200; --bad-bg:#fde8e4; --bad-ink:#a12a14; --ok-bg:#e2f3e6; --ok-ink:#1d6331; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#161614; --card:#201f1d; --ink:#ecebe7; --muted:#a09c93; --line:#35332f; --accent:#7fb0ff;
-      --warn-bg:#45360f; --warn-ink:#ffd98a; --bad-bg:#4a1f17; --bad-ink:#ffb4a4; --ok-bg:#17381f; --ok-ink:#9fe0b0; }
-  }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink);
-    font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  .wrap { max-width: 820px; margin: 0 auto; padding: 20px 16px 80px; }
-  header { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-  h1 { font-size:22px; margin:0; }
-  a { color: var(--accent); }
-  h2 { font-size:16px; margin:0 0 4px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-top:16px; }
-  .hint { color:var(--muted); font-size:13.5px; margin:0 0 12px; }
-  .banner { border-radius:8px; padding:10px 12px; margin-top:16px; font-size:14px; }
-  .banner.warn { background:var(--warn-bg); color:var(--warn-ink); }
-  .banner.bad { background:var(--bad-bg); color:var(--bad-ink); }
-  .banner.ok { background:var(--ok-bg); color:var(--ok-ink); }
-  textarea, select, input[type=number] { font:inherit; color:var(--ink); background:var(--bg);
-    border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
-  textarea { width:100%; min-height:70px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:13px; }
-  input[type=number] { width:70px; }
-  table { width:100%; border-collapse:collapse; }
-  th { text-align:center; font-size:12.5px; font-weight:600; color:var(--muted); padding:4px 6px 8px; }
-  th:first-child { text-align:left; }
-  td { border-top:1px solid var(--line); padding:10px 6px; vertical-align:top; }
-  td.pick { text-align:center; width:110px; }
-  td .what { font-weight:600; }
-  td .desc { color:var(--muted); font-size:13px; }
-  input[type=radio], input[type=checkbox] { width:18px; height:18px; accent-color: var(--accent); }
-  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:8px 0; }
-  .days label { display:inline-flex; align-items:center; gap:4px; margin-right:10px; }
-  .bar { position:sticky; bottom:0; background:var(--bg); border-top:1px solid var(--line);
-    padding:12px 0; margin-top:20px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  button { font:inherit; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink);
-    padding:8px 14px; cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
-  @media (prefers-color-scheme: dark) { button.primary { color:#10203a; } }
-  button:disabled { opacity:.5; cursor:default; }
-  #msg { font-size:14px; }
-  .dim { opacity:.45; }
+${THEME_CSS}
+  .main { max-width: 1040px; }
+  .banner { border-radius: 8px; padding: 11px 14px; margin-top: 16px; font-size: 14px; }
+  .banner.warn { background: var(--amber-wash); color: var(--amber-ink); }
+  .banner.bad { background: var(--red-wash); color: var(--red-ink); }
+  .banner.ok { background: var(--teal-pill); color: var(--teal-deep); border: 1px solid var(--teal-line); }
+  textarea { width: 100%; min-height: 70px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  input[type=number] { width: 74px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: center; font-size: 13.5px; font-weight: 300; color: var(--muted); padding: 6px 6px 12px; }
+  th:first-child { text-align: left; }
+  td { border-top: 1px solid var(--line); padding: 13px 6px; vertical-align: top; }
+  td.pick { text-align: center; width: 120px; }
+  td .what { color: var(--ink); font-weight: 500; }
+  td .desc { color: var(--muted); font-size: 13.5px; }
+  .line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; color: var(--ink); }
+  .days label { display: inline-flex; align-items: center; gap: 5px; margin-right: 12px; }
+  .bar { position: sticky; bottom: 0; background: var(--page); border-top: 1px solid var(--line);
+    padding: 14px 0; margin-top: 22px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #msg { font-size: 14px; }
+  .dim { opacity: .45; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
+<div class="shell">
+${sidebar("settings")}
+<main class="main">
+  <div class="card pagehead">
     <h1>Alert settings</h1>
-    <a href="/">Back to the board</a>
-  </header>
+    <div class="tag">Choose who is emailed, about what, and when</div>
+  </div>
 
   <div id="banners"></div>
 
-  <section class="card">
+  <section class="card section">
     <h2>Who gets the emails</h2>
     <p class="hint">One address per line. Everyone listed gets the same emails. A new address must be verified in
       Cloudflare before it can receive anything, so ask whoever looks after this tool to add it there first.</p>
     <textarea id="recipients" spellcheck="false" autocomplete="off" aria-label="Recipient email addresses"></textarea>
   </section>
 
-  <section class="card">
+  <section class="card section">
     <h2>What to email about</h2>
     <p class="hint">Straight away means within about half an hour of the carrier reporting it.</p>
     <table>
@@ -78,7 +61,7 @@ export const SETTINGS_PAGE = `<!doctype html>
     </table>
   </section>
 
-  <section class="card">
+  <section class="card section">
     <h2>Morning summary</h2>
     <p class="hint">One email listing every shipment that still needs attention. Nothing is sent on a morning with nothing to report.</p>
     <div class="line"><label><input type="checkbox" id="sumOn"> Send a morning summary</label></div>
@@ -88,7 +71,7 @@ export const SETTINGS_PAGE = `<!doctype html>
     </div>
   </section>
 
-  <section class="card">
+  <section class="card section">
     <h2>Working hours</h2>
     <p class="hint">Holds "straight away" emails overnight and at weekends, then sends them at the start of the next working day. UK time, Monday to Friday.</p>
     <div class="line"><label><input type="checkbox" id="whOn"> Only email during working hours</label></div>
@@ -98,7 +81,7 @@ export const SETTINGS_PAGE = `<!doctype html>
     </div>
   </section>
 
-  <section class="card">
+  <section class="card section">
     <h2>When a shipment gets flagged</h2>
     <div class="line"><label>Stalled after <input type="number" id="stallDays" min="1" max="30"> working days without a scan</label></div>
     <div class="line"><label>Customs hold after <input type="number" id="customsHours" min="1" max="240"> hours with customs and not released</label></div>
@@ -110,10 +93,12 @@ export const SETTINGS_PAGE = `<!doctype html>
     <button id="test">Save and send a test email</button>
     <span id="msg" role="status"></span>
   </div>
+</main>
 </div>
 
 <script>
 (function () {
+${WHO_JS}
   var EVENTS = [
     { key: "customs",   what: "Customs hold",  desc: "Customs wants documents or payment, has rejected it, or has kept it too long", summary: true },
     { key: "problem",   what: "Problem",       desc: "Failed delivery, refused, being returned, lost or destroyed", summary: true },
@@ -220,6 +205,7 @@ export const SETTINGS_PAGE = `<!doctype html>
 
   function show(j) {
     var s = j.settings;
+    if (j.user) showUser(j.user);
     $("recipients").value = s.recipients.join("\\n");
     EVENTS.forEach(function (ev) {
       var radios = document.getElementsByName("ev-" + ev.key);
@@ -269,7 +255,7 @@ export const SETTINGS_PAGE = `<!doctype html>
 
   function say(text, bad) {
     $("msg").textContent = text;
-    $("msg").style.color = bad ? "var(--bad-ink)" : "";
+    $("msg").style.color = bad ? "var(--red-ink)" : "";
   }
 
   function save() {

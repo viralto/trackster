@@ -1,113 +1,83 @@
 // The board. One page, no build step. Kept in its own file so the engine
 // (index.js) can later serve a different screen without being touched.
 
+import { THEME_HEAD, THEME_CSS, WHO_JS, sidebar } from "./theme.js";
+
 export const PAGE = `<!doctype html>
 <html lang="en-GB">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Shipment tracker</title>
+<title>Shipments</title>
+${THEME_HEAD}
 <style>
-  :root {
-    --bg: #f6f5f2; --card: #ffffff; --ink: #1c1b19; --muted: #6b6860; --line: #e2dfd8;
-    --accent: #1f5fbf;
-    --customs-bg: #fde8e4; --customs-ink: #a12a14;
-    --problem-bg: #fde8e4; --problem-ink: #a12a14;
-    --stalled-bg: #fdf0d2; --stalled-ink: #7a5200;
-    --transit-bg: #e4eefb; --transit-ink: #1b4d91;
-    --label-bg: #ecebe7; --label-ink: #55524b;
-    --out-bg: #e2f3e6; --out-ink: #1d6331;
-    --delivered-bg: #ecebe7; --delivered-ink: #55524b;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #161614; --card: #201f1d; --ink: #ecebe7; --muted: #a09c93; --line: #35332f;
-      --accent: #7fb0ff;
-      --customs-bg: #4a1f17; --customs-ink: #ffb4a4;
-      --problem-bg: #4a1f17; --problem-ink: #ffb4a4;
-      --stalled-bg: #45360f; --stalled-ink: #ffd98a;
-      --transit-bg: #1b2f4d; --transit-ink: #a9cbff;
-      --label-bg: #2e2c29; --label-ink: #c2beb5;
-      --out-bg: #17381f; --out-ink: #9fe0b0;
-      --delivered-bg: #2e2c29; --delivered-ink: #c2beb5;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  .wrap { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
-  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  h1 { font-size: 22px; margin: 0; }
-  .meta { color: var(--muted); font-size: 13px; }
-  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
-    margin: 28px 0 8px; display: flex; align-items: center; gap: 8px; }
-  h2 .count { background: var(--line); color: var(--ink); border-radius: 10px; padding: 0 8px; font-size: 12px; letter-spacing: 0; }
-  h2 button { margin-left: auto; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
-  .add { padding: 14px; margin-top: 16px; }
-  .add label { font-weight: 600; display: block; margin-bottom: 6px; }
-  .add .hint { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
-  textarea, input[type=text] { width: 100%; font: inherit; color: var(--ink); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-  textarea { min-height: 76px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
-  .row-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
-  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--card);
-    color: var(--ink); padding: 7px 12px; cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-  @media (prefers-color-scheme: dark) { button.primary { color: #10203a; } }
-  button:disabled { opacity: .5; cursor: default; }
-  button.link { border: 0; background: none; color: var(--accent); padding: 0; }
-  button.small { padding: 4px 9px; font-size: 13px; }
+${THEME_CSS}
+  .add label { color: var(--ink); font-weight: 500; display: block; margin-bottom: 4px; }
+  textarea { width: 100%; min-height: 76px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  .row-actions { display: flex; align-items: center; gap: 14px; margin-top: 12px; flex-wrap: wrap; }
+  .meta { color: var(--muted); font-size: 13.5px; }
   .notice { margin-top: 10px; font-size: 14px; }
   .notice ul { margin: 4px 0 0; padding-left: 18px; }
-  .err { color: var(--problem-ink); }
-  .list { overflow: hidden; }
-  .ship { border-top: 1px solid var(--line); }
-  .ship:first-child { border-top: 0; }
-  .summary { display: grid; grid-template-columns: 132px 1fr auto; gap: 12px; align-items: start;
-    padding: 12px 14px; cursor: pointer; }
-  .summary:hover { background: color-mix(in srgb, var(--line) 30%, transparent); }
-  .pill { display: inline-block; border-radius: 6px; padding: 2px 8px; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
-  .s-customs { background: var(--customs-bg); color: var(--customs-ink); }
-  .s-problem { background: var(--problem-bg); color: var(--problem-ink); }
-  .s-stalled { background: var(--stalled-bg); color: var(--stalled-ink); }
-  .s-transit { background: var(--transit-bg); color: var(--transit-ink); }
-  .s-label { background: var(--label-bg); color: var(--label-ink); }
-  .s-out { background: var(--out-bg); color: var(--out-ink); }
-  .s-delivered { background: var(--delivered-bg); color: var(--delivered-ink); }
-  .s-looking { background: var(--label-bg); color: var(--label-ink); }
-  .s-notfound { background: var(--stalled-bg); color: var(--stalled-ink); }
-  .title { font-weight: 600; }
-  .tn { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; color: var(--muted); }
-  .reason { margin-top: 2px; }
-  .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
-  .star { border: 0; background: none; font-size: 20px; line-height: 1; padding: 2px 4px; color: var(--muted); }
-  .star.on { color: #d99a00; }
-  .detail { padding: 0 14px 14px 158px; }
-  .timeline { list-style: none; margin: 0 0 12px; padding: 0; border-left: 2px solid var(--line); }
-  .timeline li { padding: 4px 0 8px 12px; position: relative; }
-  .timeline li::before { content: ""; position: absolute; left: -5px; top: 10px; width: 8px; height: 8px;
-    border-radius: 50%; background: var(--muted); }
-  .timeline .when { color: var(--muted); font-size: 12.5px; }
+  .err { color: var(--red-ink); }
+
+  .group { margin-top: 24px; padding: 6px 26px 10px; }
+  .grouphead { display: flex; align-items: center; gap: 10px; padding: 16px 0 14px; border-bottom: 1px solid var(--line);
+    color: var(--muted); font-size: 14.5px; font-weight: 300; }
+  .grouphead .count { background: var(--teal-pill); color: var(--teal-deep); border: 1px solid var(--teal-line);
+    border-radius: 4px; padding: 0 8px; font-size: 12.5px; font-weight: 400; }
+  .grouphead button { margin-left: auto; }
+  .ship { border-bottom: 1px solid var(--line); }
+  .ship:last-child { border-bottom: 0; }
+  .summary { display: grid; grid-template-columns: 28px 170px 1fr auto; gap: 14px; align-items: center;
+    padding: 16px 4px; cursor: pointer; }
+  .summary:hover { background: var(--row-alt); }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--grey-dot); justify-self: center; }
+  .d-customs, .d-problem { background: var(--red); }
+  .d-stalled, .d-notfound { background: var(--amber); }
+  .d-transit, .d-out { background: var(--teal); }
+  .d-delivered { background: var(--green); }
+  .pill { display: inline-block; border-radius: 4px; padding: 4px 10px; font-size: 12.5px; font-weight: 400;
+    letter-spacing: .03em; text-transform: uppercase; white-space: nowrap;
+    background: var(--teal-pill); color: var(--teal-deep); border: 1px solid var(--teal-line); }
+  .s-customs, .s-problem { background: var(--red-wash); color: var(--red-ink); border-color: #f3cfd4; }
+  .s-stalled, .s-notfound { background: var(--amber-wash); color: var(--amber-ink); border-color: #f3e0b3; }
+  .s-label, .s-looking, .s-delivered { background: #f5f5f6; color: var(--text); border-color: var(--line); }
+  .title { color: var(--ink); font-weight: 500; }
+  .tn { font-size: 13.5px; color: var(--muted); letter-spacing: .02em; }
+  .reason { color: var(--ink); margin-top: 2px; }
+  .sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+  .star { width: 40px; height: 40px; border-radius: 50%; border: 1px solid #dcdfe6; background: #fff; font-size: 18px;
+    line-height: 1; padding: 0; color: var(--muted); }
+  .star.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+  .detail { padding: 2px 4px 18px 216px; }
+  .timeline { list-style: none; margin: 0 0 14px; padding: 0; border-left: 2px solid var(--line); }
+  .timeline li { padding: 4px 0 8px 14px; position: relative; color: var(--ink); }
+  .timeline li::before { content: ""; position: absolute; left: -6px; top: 11px; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--teal); border: 2px solid #fff; }
+  .timeline .when { color: var(--muted); font-size: 13px; }
   .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .tools input[type=text] { max-width: 280px; padding: 5px 8px; font-size: 13px; }
-  .empty { padding: 18px 14px; color: var(--muted); }
-  @media (max-width: 640px) {
-    .summary { grid-template-columns: 1fr auto; }
-    .summary .state { grid-column: 1 / -1; }
-    .detail { padding-left: 14px; }
+  .tools input[type=text] { max-width: 280px; padding: 5px 9px; font-size: 13.5px; }
+  .empty { padding: 20px 4px; color: var(--muted); }
+  @media (max-width: 860px) {
+    .summary { grid-template-columns: 22px 1fr auto; }
+    .summary .state { grid-column: 2; }
+    .summary .mid { grid-column: 2; }
+    .summary .star { grid-row: 1; grid-column: 3; }
+    .detail { padding-left: 40px; }
   }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>Shipment tracker</h1>
-    <div class="meta"><span id="meta">Loading</span> <a href="/settings" style="color:var(--accent);margin-left:8px">Alert settings</a></div>
-  </header>
+<div class="shell">
+${sidebar("board")}
+<main class="main">
+  <div class="card pagehead">
+    <h1>Shipments</h1>
+    <div class="tag" id="meta">Where every parcel is, and which ones need you</div>
+  </div>
 
-  <section class="card add" aria-label="Add shipments">
+  <section class="card section add" aria-label="Add shipments">
     <label for="paste">Add shipments</label>
     <p class="hint">One tracking number per line. Add a note after a comma if you like, for example:
       1Z999AA10123456784, Acme order 4471</p>
@@ -119,19 +89,27 @@ export const PAGE = `<!doctype html>
     <div class="notice" id="addNotice" role="status"></div>
   </section>
 
-  <h2>Needs attention <span class="count" id="c-attention">0</span></h2>
-  <div class="card list" id="g-attention"></div>
+  <section class="card group">
+    <div class="grouphead">Needs attention <span class="count" id="c-attention">0</span></div>
+    <div id="g-attention"></div>
+  </section>
 
-  <h2>On the way <span class="count" id="c-moving">0</span></h2>
-  <div class="card list" id="g-moving"></div>
+  <section class="card group">
+    <div class="grouphead">On the way <span class="count" id="c-moving">0</span></div>
+    <div id="g-moving"></div>
+  </section>
 
-  <h2>Delivered, last 14 days <span class="count" id="c-done">0</span>
-    <button class="link" id="toggleDone">Show</button></h2>
-  <div class="card list" id="g-done" hidden></div>
+  <section class="card group">
+    <div class="grouphead">Delivered, last 14 days <span class="count" id="c-done">0</span>
+      <button class="link" id="toggleDone">Show</button></div>
+    <div id="g-done" hidden></div>
+  </section>
+</main>
 </div>
 
 <script>
 (function () {
+${WHO_JS}
   var STATE = {
     customs:   { label: "Customs hold",     group: "attention", order: 0 },
     problem:   { label: "Problem",          group: "attention", order: 1 },
@@ -258,8 +236,7 @@ export const PAGE = `<!doctype html>
     $("quota").textContent = data.quota.used + " of " + data.quota.limit + " Ship24 slots used this month";
     $("addBtn").disabled = data.quota.used >= data.quota.limit;
     chaseNewOnes();
-    $("meta").textContent = "Signed in as " + data.user + ". Flags after " + data.stallDays +
-      " working days without a scan.";
+    showUser(data.user);
   }
 
   function shipRow(s) {
@@ -270,11 +247,12 @@ export const PAGE = `<!doctype html>
     sum.setAttribute("tabindex", "0");
     sum.setAttribute("aria-expanded", open[s.id] ? "true" : "false");
 
+    sum.appendChild(el("span", "dot d-" + s.state));
     var st = el("div", "state");
     st.appendChild(el("span", "pill s-" + s.state, def.label));
     sum.appendChild(st);
 
-    var mid = el("div");
+    var mid = el("div", "mid");
     mid.appendChild(el("div", "title", s.label || s.trackingNumber));
     var idLine = (s.courier ? s.courier.toUpperCase() + "  " : "") + (s.label ? s.trackingNumber : "") +
       (s.destCountry ? "  to " + s.destCountry : "");
