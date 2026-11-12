@@ -171,8 +171,11 @@ export function deriveState(row, now, stallDays, customsHours) {
     return { state: "problem", reason: problemText(code) };
   }
 
+  const said = row.customs_text ? ' Carrier says: "' + clip(row.customs_text, 170) + '"' : "";
+  const sinceDay = row.customs_since ? " since " + dayMonth(row.customs_since) : "";
   if (row.customs_state === "hold") {
-    return { state: "customs", reason: code === "customs_rejected" ? "Rejected by customs" : "Held in customs: documents or payment may be needed" };
+    if (code === "customs_rejected") return { state: "customs", reason: "Rejected by customs." + said };
+    return { state: "customs", reason: said ? "Held at import" + sinceDay + "." + said : "Held in customs: documents or payment may be needed" };
   }
   // Most parcels sit with customs for minutes. Only flag one that lingers.
   let customsNote = "";
@@ -180,7 +183,7 @@ export function deriveState(row, now, stallDays, customsHours) {
     const since = row.customs_since || row.last_event_at;
     const hours = since ? Math.floor((now.getTime() - new Date(since).getTime()) / 3600000) : 0;
     if (hours >= (customsHours || 24)) {
-      return { state: "customs", reason: "With customs for " + (hours >= 48 ? Math.floor(hours / 24) + " days" : hours + " hours") + " and not released" };
+      return { state: "customs", reason: "With customs for " + (hours >= 48 ? Math.floor(hours / 24) + " days" : hours + " hours") + " and not released." + said };
     }
     customsNote = "With customs";
   }
@@ -208,6 +211,17 @@ export function deriveState(row, now, stallDays, customsHours) {
 
   if (ms === "info_received") return { state: "label", reason: "" };
   return { state: "transit", reason: customsNote };
+}
+
+function clip(text, max) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  return t.length > max ? t.slice(0, max - 1).trimEnd() + "\u2026" : t;
+}
+
+function dayMonth(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short" }).format(d);
 }
 
 function problemText(code) {
@@ -439,15 +453,24 @@ export function summarise(tracking) {
   // "in" = with customs, nothing wrong yet. "hold" = customs wants something.
   let customs = null;
   let customsSince = null;
+  let customsText = null; // the carrier's own words for the current state
   for (const e of events) {
-    const kind = customsKind(e);
+    let kind = customsKind(e);
+    // A parcel that is out for delivery or delivered has plainly been let
+    // go, even if the carrier never said "released".
+    if (!kind && (customs === "in" || customs === "hold") &&
+        (e.statusMilestone === "out_for_delivery" || e.statusMilestone === "delivered")) kind = "cleared";
     if (!kind) continue;
     if (kind === "cleared") {
       customs = "cleared";
       customsSince = null;
+      customsText = null;
     } else {
       if (customs !== "in" && customs !== "hold") customsSince = toIso(e.occurrenceDatetime);
-      if (kind === "hold" || customs !== "hold") customs = kind;
+      if (kind === "hold" || customs !== "hold") {
+        if (kind === "hold" || !customsText) customsText = e.status || null;
+        customs = kind;
+      }
     }
   }
 
@@ -470,6 +493,7 @@ export function summarise(tracking) {
     statusCode: shipment.statusCode || (last && last.statusCode) || null,
     customs,
     customsSince,
+    customsText,
     courier: (last && last.courierCode) || null,
     lastEventAt: last ? toIso(last.occurrenceDatetime) : null,
     lastEventText: last ? last.status || null : null,
@@ -485,8 +509,8 @@ export function summarise(tracking) {
 // "pending release from a Government Agency" comes through as plain text.
 // So read the carrier's own wording as well as the code.
 const CUSTOMS_CLEARED = /released by (a |the )?(government agency|customs|clearing agency)|cleared customs|customs clearance (is )?complete|clearance (is )?complete|international shipment release/i;
-const CUSTOMS_HOLD = /(additional|more|missing|incomplete|incorrect) (information|documentation|documents|paperwork|details)|commercial invoice|dut(y|ies)( and| or|\/| &)? ?tax(es)? .*(due|owed|unpaid|required|outstanding)|payment .*(required|needed|due).*(customs|dut|tax)|held (by|in|at|for) (customs|a government agency|the government agency)|customs (hold|delay)|clearance delay|rejected by customs|unable to clear/i;
-const CUSTOMS_IN = /pending release from (a |the )?(government agency|customs)|presented to customs|clearance in progress|awaiting (customs )?clearance|in customs|customs clearance/i;
+const CUSTOMS_HOLD = /gateway hold|we(?:'|\u2019)?ll contact the (sender|receiver|shipper)|(additional|more|missing|incomplete|incorrect) (information|documentation|documents|paperwork|details)|commercial invoice|dut(y|ies)( and| or|\/| &)? ?tax(es)? .*(due|owed|unpaid|required|outstanding)|payment .*(required|needed|due).*(customs|dut|tax)|held (by|in|at|for) (customs|a government agency|the government agency)|customs (hold|delay)|clearance delay|rejected by customs|unable to clear/i;
+const CUSTOMS_IN = /government agency is conducting|document inspection|pending release from (a |the )?(government agency|customs)|presented to customs|clearance in progress|awaiting (customs )?clearance|in customs|customs clearance/i;
 
 export function customsKind(e) {
   const code = e.statusCode || "";
@@ -510,7 +534,7 @@ async function storeTracking(env, shipmentId, tracking, nowIso) {
   const statements = [
     env.DB.prepare(
       `UPDATE shipments SET
-         milestone = ?, status_code = ?, customs_state = ?, customs_since = ?,
+         milestone = ?, status_code = ?, customs_state = ?, customs_since = ?, customs_text = ?,
          courier = COALESCE(?, courier),
          last_event_at = ?, last_event_text = ?, last_event_location = ?,
          est_delivery = ?, dest_country = COALESCE(?, dest_country),
@@ -521,6 +545,7 @@ async function storeTracking(env, shipmentId, tracking, nowIso) {
       s.statusCode,
       s.customs,
       s.customsSince,
+      s.customsText,
       s.courier,
       s.lastEventAt,
       s.lastEventText,
@@ -600,6 +625,7 @@ async function shipmentEvents(env, id) {
       location: e.location || "",
       courier: e.courier || "",
       code: e.status_code || "",
+      customs: customsKind({ statusCode: e.status_code, status: e.status_text }) || "",
     })),
   });
 }

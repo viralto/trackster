@@ -57,6 +57,10 @@ ${THEME_CSS}
   .timeline li { padding: 4px 0 8px 14px; position: relative; color: var(--ink); }
   .timeline li::before { content: ""; position: absolute; left: -6px; top: 11px; width: 10px; height: 10px;
     border-radius: 50%; background: var(--teal); border: 2px solid #fff; }
+  .timeline li.c-hold::before { background: var(--red); }
+  .timeline li.c-in::before { background: var(--amber); }
+  .timeline li.c-cleared::before { background: var(--green); }
+  .timeline li.c-hold, .timeline li.c-in { font-weight: 400; }
   .timeline .when { color: var(--muted); font-size: 13px; }
   .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .tools input[type=text] { max-width: 280px; padding: 5px 9px; font-size: 13.5px; }
@@ -310,7 +314,7 @@ ${WHO_JS}
         return;
       }
       events.forEach(function (e) {
-        var li = el("li");
+        var li = el("li", e.customs ? "c-" + e.customs : null);
         li.appendChild(el("div", null, e.text || e.code || "Update"));
         li.appendChild(el("div", "when", when(e.at) + (e.location ? ", " + e.location : "")));
         tl.appendChild(li);

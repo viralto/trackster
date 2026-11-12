@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS shipments (
   status_code TEXT,
   customs_state TEXT,
   customs_since TEXT,
+  customs_text TEXT,
   last_event_at TEXT,
   last_event_text TEXT,
   last_event_location TEXT,
