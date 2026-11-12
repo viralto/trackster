@@ -12,6 +12,8 @@ crons = ["*/30 * * * *"]
 MAX_SHIPMENTS_PER_MONTH = "10"
 # Working days without a scan before a shipment is flagged as Stalled.
 STALL_DAYS = "3"
+# Hours a parcel can sit with customs, unreleased, before it is flagged.
+CUSTOMS_HOURS = "24"
 
 [[d1_databases]]
 binding = "DB"

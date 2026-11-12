@@ -29,13 +29,14 @@ If step 5 shows "Locked" after signing in, tell Claude. It means Cloudflare is n
 In `wrangler.toml`:
 
 - `MAX_SHIPMENTS_PER_MONTH`: hard stop on new shipments each calendar month. Set to 10 for the Ship24 free plan.
+- `CUSTOMS_HOURS`: hours a parcel can sit with customs, unreleased, before it is flagged. Set to 24.
 - `STALL_DAYS`: working days without a scan before a shipment is flagged as Stalled. Set to 3.
 
 ## The states
 
 | State | Meaning |
 |---|---|
-| Customs hold | Customs has flagged a delay, rejection, or missing documents or payment |
+| Customs hold | Customs wants documents or payment, has rejected it, or has had it for 24 hours without releasing it |
 | Problem | Failed delivery attempt, refused, being returned, lost, or destroyed |
 | Stalled | No scan for the set number of working days, or past its expected delivery date. This is the tool's own judgement |
 | Out for delivery | On the van, or waiting to be collected |

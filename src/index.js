@@ -113,13 +113,14 @@ async function listShipments(env, user) {
     .bind(new Date(now.getTime() - 14 * 86400000).toISOString())
     .all();
 
-  const shipments = results.map((row) => present(row, now, stallDays));
+  const customsHours = parseInt(env.CUSTOMS_HOURS || "24", 10) || 24;
+  const shipments = results.map((row) => present(row, now, stallDays, customsHours));
   const quota = await quotaStatus(env, now);
   return json({ shipments, quota, user: user.email, stallDays, now: now.toISOString() });
 }
 
-function present(row, now, stallDays) {
-  const s = deriveState(row, now, stallDays);
+function present(row, now, stallDays, customsHours) {
+  const s = deriveState(row, now, stallDays, customsHours);
   return {
     id: row.id,
     trackingNumber: row.tracking_number,
@@ -142,7 +143,7 @@ function present(row, now, stallDays) {
 
 // The seven plain states. "stalled" is our own judgement: Ship24 and the
 // carriers do not announce that nothing has happened.
-export function deriveState(row, now, stallDays) {
+export function deriveState(row, now, stallDays, customsHours) {
   const ms = row.milestone || "pending";
   const code = row.status_code || "";
 
@@ -156,6 +157,16 @@ export function deriveState(row, now, stallDays) {
 
   if (row.customs_state === "hold") {
     return { state: "customs", reason: code === "customs_rejected" ? "Rejected by customs" : "Held in customs: documents or payment may be needed" };
+  }
+  // Most parcels sit with customs for minutes. Only flag one that lingers.
+  let customsNote = "";
+  if (row.customs_state === "in") {
+    const since = row.customs_since || row.last_event_at;
+    const hours = since ? Math.floor((now.getTime() - new Date(since).getTime()) / 3600000) : 0;
+    if (hours >= (customsHours || 24)) {
+      return { state: "customs", reason: "With customs for " + (hours >= 48 ? Math.floor(hours / 24) + " days" : hours + " hours") + " and not released" };
+    }
+    customsNote = "With customs";
   }
 
   if (ms === "out_for_delivery") return { state: "out", reason: "" };
@@ -180,7 +191,7 @@ export function deriveState(row, now, stallDays) {
   }
 
   if (ms === "info_received") return { state: "label", reason: "" };
-  return { state: "transit", reason: row.customs_state === "in" ? "In customs" : "" };
+  return { state: "transit", reason: customsNote };
 }
 
 function problemText(code) {
@@ -414,11 +425,19 @@ export function summarise(tracking) {
     .sort((a, b) => String(a.occurrenceDatetime || "").localeCompare(String(b.occurrenceDatetime || "")));
 
   // Walk the history in order: the most recent customs event decides.
+  // "in" = with customs, nothing wrong yet. "hold" = customs wants something.
   let customs = null;
+  let customsSince = null;
   for (const e of events) {
-    if (e.statusCode === "customs_received") customs = "in";
-    else if (e.statusCode === "customs_exception" || e.statusCode === "customs_rejected") customs = "hold";
-    else if (e.statusCode === "customs_cleared") customs = "cleared";
+    const kind = customsKind(e);
+    if (!kind) continue;
+    if (kind === "cleared") {
+      customs = "cleared";
+      customsSince = null;
+    } else {
+      if (customs !== "in" && customs !== "hold") customsSince = toIso(e.occurrenceDatetime);
+      if (kind === "hold" || customs !== "hold") customs = kind;
+    }
   }
 
   const last = events[events.length - 1] || null;
@@ -439,6 +458,7 @@ export function summarise(tracking) {
     milestone,
     statusCode: shipment.statusCode || (last && last.statusCode) || null,
     customs,
+    customsSince,
     courier: (last && last.courierCode) || null,
     lastEventAt: last ? toIso(last.occurrenceDatetime) : null,
     lastEventText: last ? last.status || null : null,
@@ -448,6 +468,24 @@ export function summarise(tracking) {
     deliveredAt: deliveredAt ? toIso(deliveredAt) : null,
     events,
   };
+}
+
+// Ship24 has customs status codes, but real UPS events arrive without them:
+// "pending release from a Government Agency" comes through as plain text.
+// So read the carrier's own wording as well as the code.
+const CUSTOMS_CLEARED = /released by (a |the )?(government agency|customs|clearing agency)|cleared customs|customs clearance (is )?complete|clearance (is )?complete|international shipment release/i;
+const CUSTOMS_HOLD = /(additional|more|missing|incomplete|incorrect) (information|documentation|documents|paperwork|details)|commercial invoice|dut(y|ies)( and| or|\/| &)? ?tax(es)? .*(due|owed|unpaid|required|outstanding)|payment .*(required|needed|due).*(customs|dut|tax)|held (by|in|at|for) (customs|a government agency|the government agency)|customs (hold|delay)|clearance delay|rejected by customs|unable to clear/i;
+const CUSTOMS_IN = /pending release from (a |the )?(government agency|customs)|presented to customs|clearance in progress|awaiting (customs )?clearance|in customs|customs clearance/i;
+
+export function customsKind(e) {
+  const code = e.statusCode || "";
+  if (code === "customs_cleared") return "cleared";
+  if (code === "customs_exception" || code === "customs_rejected") return "hold";
+  const text = String(e.status || "");
+  if (CUSTOMS_CLEARED.test(text)) return "cleared";
+  if (CUSTOMS_HOLD.test(text)) return "hold";
+  if (code === "customs_received" || CUSTOMS_IN.test(text)) return "in";
+  return null;
 }
 
 function toIso(v) {
@@ -461,7 +499,7 @@ async function storeTracking(env, shipmentId, tracking, nowIso) {
   const statements = [
     env.DB.prepare(
       `UPDATE shipments SET
-         milestone = ?, status_code = ?, customs_state = ?,
+         milestone = ?, status_code = ?, customs_state = ?, customs_since = ?,
          courier = COALESCE(?, courier),
          last_event_at = ?, last_event_text = ?, last_event_location = ?,
          est_delivery = ?, dest_country = COALESCE(?, dest_country),
@@ -471,6 +509,7 @@ async function storeTracking(env, shipmentId, tracking, nowIso) {
       s.milestone,
       s.statusCode,
       s.customs,
+      s.customsSince,
       s.courier,
       s.lastEventAt,
       s.lastEventText,
