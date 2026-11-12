@@ -251,7 +251,7 @@ async function quotaStatus(env, now) {
 // ---------------------------------------------------------------- adding
 
 async function addShipments(request, env, user) {
-  if (!env.SHIP24_API_KEY) return json({ error: "The Ship24 key has not been added to the Worker yet." }, 503);
+  if (!env.SHIP24_API_KEY) return json({ error: "The tracking service has not been connected yet." }, 503);
 
   let body;
   try {
@@ -386,7 +386,7 @@ async function ship24(env, method, path, body) {
     const msg =
       (data && data.errors && data.errors[0] && (data.errors[0].message || data.errors[0].code)) ||
       (data && data.error && (data.error.message || data.error.code)) ||
-      "Ship24 replied " + res.status;
+      "The tracking service replied " + res.status;
     const err = new Error(msg);
     err.status = res.status;
     throw err;
@@ -397,7 +397,7 @@ async function ship24(env, method, path, body) {
 async function ship24CreateTracker(env, trackingNumber) {
   const data = await ship24(env, "POST", "/trackers", { trackingNumber });
   const id = data && data.data && data.data.tracker && data.data.tracker.trackerId;
-  if (!id) throw new Error("Ship24 did not return a tracker id");
+  if (!id) throw new Error("The tracking service did not return a tracker id");
   return id;
 }
 
@@ -579,7 +579,7 @@ async function refreshOne(env, id) {
   try {
     await refreshShipment(env, row);
   } catch (e) {
-    return json({ error: "Ship24 did not answer: " + String(e.message || e).slice(0, 200) }, 502);
+    return json({ error: "The tracking service did not answer: " + String(e.message || e).slice(0, 200) }, 502);
   }
   return json({ ok: true });
 }

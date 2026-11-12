@@ -178,7 +178,7 @@ ${WHO_JS}
     });
   }
 
-  // A new shipment is blank until Ship24 has heard back from the carrier.
+  // A new shipment is blank until the tracking service has heard back from the carrier.
   // While any are that fresh, keep asking so the board fills in by itself.
   var chaseTimer = null;
   function chaseNewOnes() {
@@ -239,7 +239,8 @@ ${WHO_JS}
     });
     if (reveal) setDone(true);
     data.shipments.forEach(function (s) { lastState[s.id] = s.state; });
-    $("quota").textContent = data.quota.used + " of " + data.quota.limit + " Ship24 slots used this month";
+    $("quota").textContent = data.quota.used >= data.quota.limit
+      ? "This month's tracking allowance has been used up. New shipments can be added again next month." : "";
     $("addBtn").disabled = data.quota.used >= data.quota.limit;
     chaseNewOnes();
     showUser(data.user);
@@ -346,7 +347,7 @@ ${WHO_JS}
       });
     });
     var remove = el("button", "small", "Remove");
-    remove.title = "Hides it from the board. The Ship24 slot it used is not refunded.";
+    remove.title = "Hides it from the board.";
     remove.addEventListener("click", function () {
       if (remove.dataset.sure !== "1") {
         remove.dataset.sure = "1";
@@ -363,7 +364,7 @@ ${WHO_JS}
     tools.appendChild(refresh);
     tools.appendChild(remove);
     d.appendChild(tools);
-    d.appendChild(el("div", "sub", "Last checked with Ship24 " + (s.checkedAt ? ago(s.checkedAt) : "not yet") + "."));
+    d.appendChild(el("div", "sub", "Last checked " + (s.checkedAt ? ago(s.checkedAt) : "not yet") + "."));
     return d;
   }
 
@@ -371,8 +372,8 @@ ${WHO_JS}
     added: "added",
     duplicate: "already on the board",
     restored: "was removed before, now back on the board",
-    over_limit: "not added: this month's Ship24 slots are used up",
-    failed: "not added: Ship24 rejected it",
+    over_limit: "not added: this month's tracking allowance has been used up",
+    failed: "not added: the tracking service rejected it",
     suspect: "not added"
   };
 
@@ -397,7 +398,7 @@ ${WHO_JS}
         if (r.result === "suspect") {
           var force = el("button", "small", "Add it anyway");
           force.style.marginLeft = "8px";
-          force.title = "Uses one Ship24 slot even if the number turns out to be wrong";
+          force.title = "Adds it without checking that the number is the right shape";
           force.addEventListener("click", function () {
             submit([{ trackingNumber: r.trackingNumber, label: labels[r.trackingNumber] || "", force: true }]);
           });
