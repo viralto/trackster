@@ -12,6 +12,7 @@ import { PAGE } from "./page.js";
 const SHIP24_DEFAULT_BASE = "https://api.ship24.com/public/v1";
 const MAX_PER_PASTE = 20; // keeps one paste inside Cloudflare's per-request limits
 const MAX_PER_CRON = 40;
+const LOOKUP_GRACE_HOURS = 2;
 
 export default {
   async fetch(request, env, ctx) {
@@ -160,6 +161,14 @@ export function deriveState(row, now, stallDays) {
   if (ms === "out_for_delivery") return { state: "out", reason: "" };
   if (ms === "available_for_pickup") return { state: "out", reason: "Waiting to be collected" };
 
+  if (ms === "pending") {
+    // Ship24 fetches from the carrier in the background, so a new shipment is
+    // blank for the first few minutes. Past two hours, the number is the problem.
+    const hours = (now.getTime() - new Date(row.created_at).getTime()) / 3600000;
+    if (hours < LOOKUP_GRACE_HOURS) return { state: "looking", reason: "Asking the carrier. This usually takes a few minutes." };
+    return { state: "notfound", reason: "No carrier recognises this number. Check it for a typo." };
+  }
+
   const today = now.toISOString().slice(0, 10);
   if (row.est_delivery && row.est_delivery.slice(0, 10) < today) {
     return { state: "stalled", reason: "Past its expected delivery date (" + row.est_delivery.slice(0, 10) + ")" };
@@ -167,11 +176,9 @@ export function deriveState(row, now, stallDays) {
   const since = row.last_event_at || row.created_at;
   const quietDays = workingDaysBetween(new Date(since), now);
   if (quietDays >= stallDays) {
-    const what = row.last_event_at ? "No scan for " : "No tracking data found for ";
-    return { state: "stalled", reason: what + quietDays + " working days" };
+    return { state: "stalled", reason: "No scan for " + quietDays + " working days" };
   }
 
-  if (ms === "pending") return { state: "label", reason: "Carrier has no tracking data yet" };
   if (ms === "info_received") return { state: "label", reason: "" };
   return { state: "transit", reason: row.customs_state === "in" ? "In customs" : "" };
 }
@@ -237,7 +244,7 @@ async function addShipments(request, env, user) {
     const tn = cleanTrackingNumber(item && item.trackingNumber);
     if (!tn || seen.has(tn)) continue;
     seen.add(tn);
-    wanted.push({ tn, label: String((item && item.label) || "").trim().slice(0, 120) });
+    wanted.push({ tn, label: String((item && item.label) || "").trim().slice(0, 120), force: !!(item && item.force) });
   }
   if (!wanted.length) return json({ error: "No tracking numbers found in that." }, 400);
   if (wanted.length > MAX_PER_PASTE) {
@@ -259,6 +266,13 @@ async function addShipments(request, env, user) {
         report.push({ trackingNumber: w.tn, result: "duplicate" });
       }
       continue;
+    }
+    if (!w.force) {
+      const shape = carrierFormat(w.tn);
+      if (!shape.ok) {
+        report.push({ trackingNumber: w.tn, result: "suspect", detail: shape.why });
+        continue;
+      }
     }
     if (room <= 0) {
       report.push({ trackingNumber: w.tn, result: "over_limit" });
@@ -289,6 +303,32 @@ async function addShipments(request, env, user) {
     }
   }
   return json({ report });
+}
+
+// Sam ships with UPS and FedEx only. Checking the number's shape (and its
+// built-in check digit where there is one) catches typos and made-up numbers
+// before they cost a Ship24 slot.
+export function carrierFormat(tn) {
+  if (/^1Z[A-Z0-9]{16}$/.test(tn)) {
+    let total = 0;
+    const body = tn.slice(2, 17);
+    for (let i = 0; i < body.length; i++) {
+      const c = body[i];
+      const v = c >= "0" && c <= "9" ? Number(c) : (c.charCodeAt(0) - 63) % 10;
+      total += i % 2 === 0 ? v : 2 * v;
+    }
+    const ok = (10 - (total % 10)) % 10 === Number(tn[17]);
+    return ok ? { ok: true, carrier: "ups" } : { ok: false, why: "It is shaped like a UPS number but its check digit is wrong, which usually means a typo." };
+  }
+  if (/^\d{12}$/.test(tn)) {
+    const w = [3, 1, 7];
+    let total = 0;
+    for (let i = 0; i < 11; i++) total += Number(tn[i]) * w[i % 3];
+    const ok = (total % 11) % 10 === Number(tn[11]);
+    return ok ? { ok: true, carrier: "fedex" } : { ok: false, why: "It is shaped like a FedEx number but its check digit is wrong, which usually means a typo." };
+  }
+  if (/^\d{15}$/.test(tn) || /^\d{20}$/.test(tn) || /^\d{22}$/.test(tn)) return { ok: true, carrier: "fedex" };
+  return { ok: false, why: "It does not look like a UPS or FedEx tracking number." };
 }
 
 function cleanTrackingNumber(v) {

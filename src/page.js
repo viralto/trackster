@@ -76,6 +76,8 @@ export const PAGE = `<!doctype html>
   .s-label { background: var(--label-bg); color: var(--label-ink); }
   .s-out { background: var(--out-bg); color: var(--out-ink); }
   .s-delivered { background: var(--delivered-bg); color: var(--delivered-ink); }
+  .s-looking { background: var(--label-bg); color: var(--label-ink); }
+  .s-notfound { background: var(--stalled-bg); color: var(--stalled-ink); }
   .title { font-weight: 600; }
   .tn { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; color: var(--muted); }
   .reason { margin-top: 2px; }
@@ -134,9 +136,11 @@ export const PAGE = `<!doctype html>
     customs:   { label: "Customs hold",     group: "attention", order: 0 },
     problem:   { label: "Problem",          group: "attention", order: 1 },
     stalled:   { label: "Stalled",          group: "attention", order: 2 },
+    notfound:  { label: "Not found",        group: "attention", order: 2.5 },
     out:       { label: "Out for delivery", group: "moving",    order: 3 },
     transit:   { label: "In transit",       group: "moving",    order: 4 },
     label:     { label: "Label created",    group: "moving",    order: 5 },
+    looking:   { label: "Looking it up",    group: "moving",    order: 5.5 },
     delivered: { label: "Delivered",        group: "done",      order: 6 }
   };
   var open = {};       // shipment id -> true when expanded
@@ -193,6 +197,27 @@ export const PAGE = `<!doctype html>
     });
   }
 
+  // A new shipment is blank until Ship24 has heard back from the carrier.
+  // While any are that fresh, keep asking so the board fills in by itself.
+  var chaseTimer = null;
+  function chaseNewOnes() {
+    if (chaseTimer || !data) return;
+    var fresh = data.shipments.filter(function (s) { return s.state === "looking"; });
+    if (!fresh.length) return;
+    var veryNew = fresh.some(function (s) {
+      return (Date.now() - new Date(s.createdAt).getTime()) < 15 * 60000;
+    });
+    chaseTimer = setTimeout(function () {
+      var chain = Promise.resolve();
+      fresh.forEach(function (s) {
+        chain = chain.then(function () {
+          return api("POST", "/api/shipments/" + s.id + "/refresh", {}).catch(function () {});
+        });
+      });
+      chain.then(function () { chaseTimer = null; return load(); });
+    }, veryNew ? 20000 : 120000);
+  }
+
   function render() {
     var groups = { attention: [], moving: [], done: [] };
     data.shipments.forEach(function (s) {
@@ -217,6 +242,7 @@ export const PAGE = `<!doctype html>
     });
     $("quota").textContent = data.quota.used + " of " + data.quota.limit + " Ship24 slots used this month";
     $("addBtn").disabled = data.quota.used >= data.quota.limit;
+    chaseNewOnes();
     $("meta").textContent = "Signed in as " + data.user + ". Flags after " + data.stallDays +
       " working days without a scan.";
   }
@@ -235,9 +261,9 @@ export const PAGE = `<!doctype html>
 
     var mid = el("div");
     mid.appendChild(el("div", "title", s.label || s.trackingNumber));
-    var idLine = (s.courier ? s.courier.toUpperCase() + "  " : "") + s.trackingNumber +
+    var idLine = (s.courier ? s.courier.toUpperCase() + "  " : "") + (s.label ? s.trackingNumber : "") +
       (s.destCountry ? "  to " + s.destCountry : "");
-    mid.appendChild(el("div", "tn", idLine));
+    if (idLine.trim()) mid.appendChild(el("div", "tn", idLine.trim()));
     if (s.reason) mid.appendChild(el("div", "reason", s.reason));
     var last = s.lastEventText
       ? "Last scan " + ago(s.lastEventAt) + ": " + s.lastEventText + (s.lastEventLocation ? " (" + s.lastEventLocation + ")" : "")
@@ -346,30 +372,38 @@ export const PAGE = `<!doctype html>
     duplicate: "already on the board",
     restored: "was removed before, now back on the board",
     over_limit: "not added: this month's Ship24 slots are used up",
-    failed: "not added: Ship24 rejected it"
+    failed: "not added: Ship24 rejected it",
+    suspect: "not added"
   };
 
-  $("addBtn").addEventListener("click", function () {
-    var items = $("paste").value.split(/\\r?\\n/).map(function (line) {
-      var i = line.indexOf(",");
-      var tn = (i === -1 ? line : line.slice(0, i)).trim();
-      var label = i === -1 ? "" : line.slice(i + 1).trim();
-      return { trackingNumber: tn, label: label };
-    }).filter(function (x) { return x.trackingNumber; });
+  function norm(tn) { return String(tn || "").replace(/\\s+/g, "").toUpperCase(); }
+
+  function submit(items) {
     var notice = $("addNotice");
+    var btn = $("addBtn");
+    var labels = {};
+    items.forEach(function (x) { labels[norm(x.trackingNumber)] = x.label || ""; });
     notice.textContent = "";
     notice.className = "notice";
-    if (!items.length) { notice.textContent = "Paste at least one tracking number."; return; }
-    var btn = $("addBtn");
     btn.disabled = true;
     btn.textContent = "Adding";
-    api("POST", "/api/shipments", { items: items }).then(function (j) {
+    return api("POST", "/api/shipments", { items: items }).then(function (j) {
       var ul = el("ul");
       var allGood = true;
       j.report.forEach(function (r) {
         if (r.result !== "added") allGood = false;
-        ul.appendChild(el("li", null, r.trackingNumber + ": " + (RESULT_TEXT[r.result] || r.result) +
-          (r.detail ? " (" + r.detail + ")" : "")));
+        var li = el("li", null, r.trackingNumber + ": " + (RESULT_TEXT[r.result] || r.result) +
+          (r.detail ? ". " + r.detail : ""));
+        if (r.result === "suspect") {
+          var force = el("button", "small", "Add it anyway");
+          force.style.marginLeft = "8px";
+          force.title = "Uses one Ship24 slot even if the number turns out to be wrong";
+          force.addEventListener("click", function () {
+            submit([{ trackingNumber: r.trackingNumber, label: labels[r.trackingNumber] || "", force: true }]);
+          });
+          li.appendChild(force);
+        }
+        ul.appendChild(li);
       });
       notice.appendChild(ul);
       if (allGood) $("paste").value = "";
@@ -379,8 +413,23 @@ export const PAGE = `<!doctype html>
       notice.textContent = e.message;
     }).then(function () {
       btn.textContent = "Add to tracker";
-      if (data) btn.disabled = data.quota.used >= data.quota.limit; else btn.disabled = false;
+      btn.disabled = data ? data.quota.used >= data.quota.limit : false;
     });
+  }
+
+  $("addBtn").addEventListener("click", function () {
+    var items = $("paste").value.split(/\\r?\\n/).map(function (line) {
+      var i = line.indexOf(",");
+      var tn = (i === -1 ? line : line.slice(0, i)).trim();
+      var label = i === -1 ? "" : line.slice(i + 1).trim();
+      return { trackingNumber: tn, label: label };
+    }).filter(function (x) { return x.trackingNumber; });
+    if (!items.length) {
+      $("addNotice").className = "notice";
+      $("addNotice").textContent = "Paste at least one tracking number.";
+      return;
+    }
+    submit(items);
   });
 
   $("toggleDone").addEventListener("click", function () {

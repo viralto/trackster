@@ -40,7 +40,9 @@ In `wrangler.toml`:
 | Stalled | No scan for the set number of working days, or past its expected delivery date. This is the tool's own judgement |
 | Out for delivery | On the van, or waiting to be collected |
 | In transit | Moving normally |
-| Label created | Registered with the carrier but not yet moving, or no tracking data yet |
+| Not found | Two hours after being added, no carrier recognises the number. Usually a typo |
+| Label created | Registered with the carrier but not yet moving |
+| Looking it up | Just added. Ship24 is still asking the carrier, which takes a few minutes |
 | Delivered | Done. Stays on the board for 14 days |
 
 ## Not built yet
