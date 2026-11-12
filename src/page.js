@@ -146,6 +146,12 @@ export const PAGE = `<!doctype html>
   var open = {};       // shipment id -> true when expanded
   var eventsCache = {};
   var data = null;
+  var lastState = {};      // shipment id -> state at the previous refresh
+  var doneTouched = false; // true once the user has opened or closed Delivered themselves
+  function setDone(show) {
+    $("g-done").hidden = !show;
+    $("toggleDone").textContent = show ? "Hide" : "Show";
+  }
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, text) {
@@ -240,6 +246,15 @@ export const PAGE = `<!doctype html>
       }
       groups[g].forEach(function (s) { box.appendChild(shipRow(s)); });
     });
+    // Never let a shipment vanish into a closed section: if one has just
+    // been delivered, or was added in the last day, open Delivered.
+    var reveal = groups.done.some(function (s) {
+      var moved = lastState[s.id] && lastState[s.id] !== "delivered";
+      var recent = (Date.now() - new Date(s.createdAt).getTime()) < 24 * 3600000;
+      return moved || (recent && !doneTouched);
+    });
+    if (reveal) setDone(true);
+    data.shipments.forEach(function (s) { lastState[s.id] = s.state; });
     $("quota").textContent = data.quota.used + " of " + data.quota.limit + " Ship24 slots used this month";
     $("addBtn").disabled = data.quota.used >= data.quota.limit;
     chaseNewOnes();
@@ -433,9 +448,8 @@ export const PAGE = `<!doctype html>
   });
 
   $("toggleDone").addEventListener("click", function () {
-    var box = $("g-done");
-    box.hidden = !box.hidden;
-    $("toggleDone").textContent = box.hidden ? "Show" : "Hide";
+    doneTouched = true;
+    setDone($("g-done").hidden);
   });
 
   load();
