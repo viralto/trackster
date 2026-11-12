@@ -1,0 +1,22 @@
+name = "trackster"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+# Check open shipments with Ship24 every 30 minutes.
+[triggers]
+crons = ["*/30 * * * *"]
+
+[vars]
+# Hard stop on new shipments per calendar month, to protect the Ship24 quota.
+# Free plan = 10. Raise this when the plan is upgraded.
+MAX_SHIPMENTS_PER_MONTH = "10"
+# Working days without a scan before a shipment is flagged as Stalled.
+STALL_DAYS = "3"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "shipment-tracker"
+database_id = "ba71cfc8-6005-4180-b94b-17bde7a36dc9"
+
+# Secret (set in the Cloudflare dashboard, never in this file):
+#   SHIP24_API_KEY
