@@ -13,6 +13,8 @@ export const PAGE = `<!doctype html>
 ${THEME_HEAD}
 <style>
 ${THEME_CSS}
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .main > .section:first-of-type { margin-top: 0; }
   .add label { color: var(--ink); font-weight: 500; display: block; margin-bottom: 4px; }
   textarea { width: 100%; min-height: 76px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
   .row-actions { display: flex; align-items: center; gap: 14px; margin-top: 12px; flex-wrap: wrap; }
@@ -72,10 +74,7 @@ ${THEME_CSS}
 <div class="shell">
 ${sidebar("board")}
 <main class="main">
-  <div class="card pagehead">
-    <h1>Shipments</h1>
-    <div class="tag" id="meta">Where every parcel is, and which ones need you</div>
-  </div>
+  <h1 class="sr">Shipments</h1>
 
   <section class="card section add" aria-label="Add shipments">
     <label for="paste">Add shipments</label>
@@ -174,7 +173,8 @@ ${WHO_JS}
       data = j;
       render();
     }).catch(function (e) {
-      $("meta").textContent = "Could not load: " + e.message;
+      $("addNotice").className = "notice err";
+      $("addNotice").textContent = "Could not load shipments: " + e.message;
     });
   }
 
