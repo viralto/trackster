@@ -26,7 +26,8 @@ export const THEME_CSS = `
   .shell { display: grid; grid-template-columns: 270px 1fr; min-height: 100vh; }
 
   /* sidebar */
-  .side { background: var(--card); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  .side { background: var(--card); border-right: 1px solid var(--line); display: flex; flex-direction: column;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto; }
   .brand { padding: 30px 28px 26px; border-bottom: 1px solid var(--line); }
   .brand .name { color: var(--teal); font-size: 30px; font-weight: 300; letter-spacing: .04em; line-height: 1.1; text-transform: uppercase; }
   .brand .sub { color: var(--ink); font-size: 13px; margin-top: 2px; }
@@ -41,6 +42,18 @@ export const THEME_CSS = `
   .nav a svg { width: 26px; height: 26px; stroke: var(--teal); fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }
   .nav a.on { background: var(--teal-wash); border-right-color: var(--teal); }
   .nav a:hover { background: var(--teal-wash); }
+  .stats { padding: 2px 0 6px; }
+  .stats a { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 14px;
+    padding: 8px 28px 8px 34px; color: var(--ink); text-decoration: none; font-size: 14.5px; font-weight: 300; }
+  .stats a:hover { background: var(--teal-wash); }
+  .stats .sd { width: 11px; height: 11px; border-radius: 50%; background: var(--grey-dot); }
+  .stats .sd.red { background: var(--red); } .stats .sd.amber { background: var(--amber); }
+  .stats .sd.teal { background: var(--teal); } .stats .sd.green { background: var(--green); }
+  .stats .num { font-weight: 500; font-size: 15px; min-width: 22px; text-align: right; }
+  .stats a.zero { color: var(--faint); }
+  .stats a.zero .sd { opacity: .35; }
+  .stats a.zero .num { font-weight: 300; }
+  .stats .total { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 12px; }
   .side .foot { margin-top: auto; padding: 20px 28px; color: var(--teal-deep); font-size: 12.5px; }
 
   /* main */
@@ -69,9 +82,9 @@ export const THEME_CSS = `
 
   @media (max-width: 860px) {
     .shell { grid-template-columns: 1fr; }
-    .side { border-right: 0; border-bottom: 1px solid var(--line); }
+    .side { border-right: 0; border-bottom: 1px solid var(--line); position: static; height: auto; }
     .brand { padding: 18px 20px 14px; }
-    .who, .navlabel, .side .foot { display: none; }
+    .who, .navlabel, .stats, .side .foot { display: none; }
     .nav { display: flex; }
     .nav a { flex: 1; justify-content: center; padding: 10px; border-right: 0; border-bottom: 4px solid transparent; font-size: 15px; }
     .nav a.on { border-bottom-color: var(--teal); }
@@ -93,12 +106,58 @@ export function sidebar(active) {
       <a href="/"${active === "board" ? ' class="on" aria-current="page"' : ""}>${ICON_BOX}<span>Shipments</span></a>
       <a href="/settings"${active === "settings" ? ' class="on" aria-current="page"' : ""}>${ICON_BELL}<span>Alert settings</span></a>
     </nav>
+    <div class="navlabel">At a glance</div>
+    <div class="stats" id="stats" aria-label="Shipment counts"></div>
     <div class="foot">Prototype</div>
   </aside>`;
 }
 
-// Shared script: fills in who is signed in. Expects an email address.
+// Shared script: fills in who is signed in, and the counts in the sidebar.
 export const WHO_JS = `
+  var STAT_ROWS = [
+    { key: "customs",   label: "Customs hold",     states: ["customs"],          dot: "red" },
+    { key: "problem",   label: "Problem",          states: ["problem"],          dot: "red" },
+    { key: "stalled",   label: "Stalled",          states: ["stalled"],          dot: "amber" },
+    { key: "notfound",  label: "Not found",        states: ["notfound"],         dot: "amber", hideIfZero: true },
+    { key: "transit",   label: "In transit",       states: ["transit"],          dot: "teal" },
+    { key: "out",       label: "Out for delivery", states: ["out"],              dot: "teal" },
+    { key: "waiting",   label: "Not yet moving",   states: ["label", "looking"], dot: "" },
+    { key: "delivered", label: "Delivered",        states: ["delivered"],        dot: "green", note: "last 14 days" }
+  ];
+  function showStats(shipments) {
+    var box = document.getElementById("stats");
+    if (!box) return;
+    var counts = {};
+    shipments.forEach(function (s) { counts[s.state] = (counts[s.state] || 0) + 1; });
+    box.textContent = "";
+    function row(label, n, dot, to, note, extra) {
+      var a = document.createElement("a");
+      a.href = "/#" + to;
+      if (typeof statFilter !== "undefined" && statFilter && to === "show-" + statFilter.key) a.style.background = "var(--teal-wash)";
+      a.className = (n ? "" : "zero") + (extra ? " " + extra : "");
+      var d = document.createElement("span");
+      d.className = "sd" + (dot ? " " + dot : "");
+      if (extra) d.style.visibility = "hidden";
+      var l = document.createElement("span");
+      l.textContent = label;
+      if (note) l.title = note;
+      var c = document.createElement("span");
+      c.className = "num";
+      c.textContent = String(n);
+      a.setAttribute("aria-label", label + ": " + n + (note ? ", " + note : ""));
+      a.appendChild(d); a.appendChild(l); a.appendChild(c);
+      box.appendChild(a);
+    }
+    var open = 0;
+    STAT_ROWS.forEach(function (r) {
+      var n = r.states.reduce(function (t, st) { return t + (counts[st] || 0); }, 0);
+      if (r.key !== "delivered") open += n;
+      if (r.hideIfZero && !n) return;
+      row(r.label, n, r.dot, r.key === "delivered" ? "sec-done" : "show-" + r.key, r.note);
+    });
+    row("Open shipments", open, "", "sec-open", "everything not yet delivered", "total");
+  }
+
   function showUser(email) {
     var local = String(email || "").split("@")[0];
     var parts = local.split(/[._-]+/).filter(Boolean);

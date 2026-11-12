@@ -284,6 +284,7 @@ ${WHO_JS}
     }).catch(function (e) { say(e.message, true); }).then(function () { $("test").disabled = false; });
   });
 
+  api("GET", "/api/shipments").then(function (j) { showStats(j.shipments); }).catch(function () {});
   api("GET", "/api/settings").then(show).catch(function (e) { say("Could not load settings: " + e.message, true); });
 })();
 </script>

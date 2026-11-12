@@ -89,17 +89,13 @@ ${sidebar("board")}
     <div class="notice" id="addNotice" role="status"></div>
   </section>
 
-  <section class="card group">
-    <div class="grouphead">Needs attention <span class="count" id="c-attention">0</span></div>
-    <div id="g-attention"></div>
+  <section class="card group" id="sec-open">
+    <div class="grouphead"><span id="openTitle">Open shipments</span> <span class="count" id="c-open">0</span>
+      <button class="link" id="showAll" hidden>Show all</button></div>
+    <div id="g-open"></div>
   </section>
 
-  <section class="card group">
-    <div class="grouphead">On the way <span class="count" id="c-moving">0</span></div>
-    <div id="g-moving"></div>
-  </section>
-
-  <section class="card group">
+  <section class="card group" id="sec-done">
     <div class="grouphead">Delivered, last 14 days <span class="count" id="c-done">0</span>
       <button class="link" id="toggleDone">Show</button></div>
     <div id="g-done" hidden></div>
@@ -111,19 +107,20 @@ ${sidebar("board")}
 (function () {
 ${WHO_JS}
   var STATE = {
-    customs:   { label: "Customs hold",     group: "attention", order: 0 },
-    problem:   { label: "Problem",          group: "attention", order: 1 },
-    stalled:   { label: "Stalled",          group: "attention", order: 2 },
-    notfound:  { label: "Not found",        group: "attention", order: 2.5 },
-    out:       { label: "Out for delivery", group: "moving",    order: 3 },
-    transit:   { label: "In transit",       group: "moving",    order: 4 },
-    label:     { label: "Label created",    group: "moving",    order: 5 },
-    looking:   { label: "Looking it up",    group: "moving",    order: 5.5 },
+    customs:   { label: "Customs hold",     group: "open", order: 0 },
+    problem:   { label: "Problem",          group: "open", order: 1 },
+    stalled:   { label: "Stalled",          group: "open", order: 2 },
+    notfound:  { label: "Not found",        group: "open", order: 2.5 },
+    out:       { label: "Out for delivery", group: "open",    order: 3 },
+    transit:   { label: "In transit",       group: "open",    order: 4 },
+    label:     { label: "Label created",    group: "open",    order: 5 },
+    looking:   { label: "Looking it up",    group: "open",    order: 5.5 },
     delivered: { label: "Delivered",        group: "done",      order: 6 }
   };
   var open = {};       // shipment id -> true when expanded
   var eventsCache = {};
   var data = null;
+  var statFilter = null;   // set when a sidebar count has been clicked
   var lastState = {};      // shipment id -> state at the previous refresh
   var doneTouched = false; // true once the user has opened or closed Delivered themselves
   function setDone(show) {
@@ -203,7 +200,7 @@ ${WHO_JS}
   }
 
   function render() {
-    var groups = { attention: [], moving: [], done: [] };
+    var groups = { open: [], done: [] };
     data.shipments.forEach(function (s) {
       var def = STATE[s.state] || STATE.transit;
       groups[def.group].push(s);
@@ -217,12 +214,21 @@ ${WHO_JS}
       });
       var box = $("g-" + g);
       box.textContent = "";
-      $("c-" + g).textContent = groups[g].length;
-      if (!groups[g].length) {
-        box.appendChild(el("div", "empty", g === "attention" ? "Nothing needs you right now." :
-          g === "moving" ? "No shipments on the way." : "Nothing delivered in the last 14 days."));
+      var list = groups[g];
+      if (g === "open") {
+        var total = list.length;
+        if (statFilter) list = list.filter(function (s) { return statFilter.states.indexOf(s.state) !== -1; });
+        $("openTitle").textContent = statFilter ? statFilter.label : "Open shipments";
+        $("c-open").textContent = statFilter ? list.length + " of " + total : String(total);
+        $("showAll").hidden = !statFilter;
+      } else {
+        $("c-" + g).textContent = list.length;
       }
-      groups[g].forEach(function (s) { box.appendChild(shipRow(s)); });
+      if (!list.length) {
+        box.appendChild(el("div", "empty", g === "done" ? "Nothing delivered in the last 14 days." :
+          statFilter ? "No shipments are in this state right now." : "No open shipments."));
+      }
+      list.forEach(function (s) { box.appendChild(shipRow(s)); });
     });
     // Never let a shipment vanish into a closed section: if one has just
     // been delivered, or was added in the last day, open Delivered.
@@ -237,6 +243,7 @@ ${WHO_JS}
     $("addBtn").disabled = data.quota.used >= data.quota.limit;
     chaseNewOnes();
     showUser(data.user);
+    showStats(data.shipments);
   }
 
   function shipRow(s) {
@@ -430,7 +437,29 @@ ${WHO_JS}
     setDone($("g-done").hidden);
   });
 
-  load();
+  // A sidebar count narrows the list to that state. Delivered opens its section.
+  function followHash() {
+    var h = location.hash.slice(1);
+    var target = null;
+    if (h.indexOf("show-") === 0) {
+      var key = h.slice(5);
+      statFilter = STAT_ROWS.filter(function (r) { return r.key === key; })[0] || null;
+      target = $("sec-open");
+    } else if (h === "sec-done") {
+      doneTouched = true;
+      setDone(true);
+      target = $("sec-done");
+    } else {
+      statFilter = null;
+      if (h === "sec-open") target = $("sec-open");
+    }
+    if (data) render();
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  $("showAll").addEventListener("click", function () { location.hash = "sec-open"; });
+  window.addEventListener("hashchange", followHash);
+
+  load().then(followHash);
   setInterval(load, 5 * 60 * 1000);
 })();
 </script>
