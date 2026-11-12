@@ -10,10 +10,14 @@ crons = ["*/30 * * * *"]
 # Hard stop on new shipments per calendar month, to protect the Ship24 quota.
 # Free plan = 10. Raise this when the plan is upgraded.
 MAX_SHIPMENTS_PER_MONTH = "10"
+# Starting values only. Once saved on the Settings page, the page wins.
 # Working days without a scan before a shipment is flagged as Stalled.
 STALL_DAYS = "3"
 # Hours a parcel can sit with customs, unreleased, before it is flagged.
 CUSTOMS_HOURS = "24"
+# Alert emails come from this address and link back to this board.
+ALERT_FROM = "alerts@dot-track.app"
+BOARD_URL = "https://dot-track.app"
 
 [[d1_databases]]
 binding = "DB"
@@ -22,3 +26,7 @@ database_id = "ba71cfc8-6005-4180-b94b-17bde7a36dc9"
 
 # Secret (set in the Cloudflare dashboard, never in this file):
 #   SHIP24_API_KEY
+
+# Lets the tool send email through Cloudflare Email Service.
+[[send_email]]
+name = "EMAIL"

@@ -8,6 +8,9 @@
 // Cloudflare Access. If Access is switched off, the tool locks itself.
 
 import { PAGE } from "./page.js";
+import { SETTINGS_PAGE } from "./page-settings.js";
+import { loadSettings, saveSettings, getMeta } from "./settings.js";
+import { runAlerts, composeEmail, sendEmail } from "./alerts.js";
 
 const SHIP24_DEFAULT_BASE = "https://api.ship24.com/public/v1";
 const MAX_PER_PASTE = 20; // keeps one paste inside Cloudflare's per-request limits
@@ -27,7 +30,16 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(refreshOpenShipments(env));
+    ctx.waitUntil(
+      (async () => {
+        await refreshOpenShipments(env);
+        try {
+          await runAlerts(env, present);
+        } catch (e) {
+          console.error("alerts failed: " + ((e && e.stack) || e));
+        }
+      })()
+    );
   },
 };
 
@@ -62,8 +74,8 @@ async function route(request, env, user) {
   const path = url.pathname;
   const method = request.method;
 
-  if (method === "GET" && path === "/") {
-    return new Response(PAGE, {
+  if (method === "GET" && (path === "/" || path === "/settings")) {
+    return new Response(path === "/" ? PAGE : SETTINGS_PAGE, {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
@@ -84,6 +96,9 @@ async function route(request, env, user) {
   }
 
   if (method === "GET" && path === "/api/shipments") return listShipments(env, user);
+  if (method === "GET" && path === "/api/settings") return getSettings(env);
+  if (method === "POST" && path === "/api/settings") return postSettings(request, env);
+  if (method === "POST" && path === "/api/settings/test") return testEmail(env, user);
   if (method === "POST" && path === "/api/shipments") return addShipments(request, env, user);
 
   const m = path.match(/^\/api\/shipments\/(\d+)(?:\/(events|star|refresh|label|remove))?$/);
@@ -103,7 +118,8 @@ async function route(request, env, user) {
 
 async function listShipments(env, user) {
   const now = new Date();
-  const stallDays = stallDaysOf(env);
+  const settings = await loadSettings(env);
+  const stallDays = settings.stallDays;
   const { results } = await env.DB.prepare(
     `SELECT * FROM shipments
      WHERE archived = 0
@@ -113,7 +129,7 @@ async function listShipments(env, user) {
     .bind(new Date(now.getTime() - 14 * 86400000).toISOString())
     .all();
 
-  const customsHours = parseInt(env.CUSTOMS_HOURS || "24", 10) || 24;
+  const customsHours = settings.customsHours;
   const shipments = results.map((row) => present(row, now, stallDays, customsHours));
   const quota = await quotaStatus(env, now);
   return json({ shipments, quota, user: user.email, stallDays, now: now.toISOString() });
@@ -219,11 +235,6 @@ export function workingDaysBetween(from, to) {
     if (dow !== 0 && dow !== 6) days++;
   }
   return days;
-}
-
-function stallDaysOf(env) {
-  const n = parseInt(env.STALL_DAYS || "3", 10);
-  return Number.isFinite(n) && n > 0 ? n : 3;
 }
 
 async function quotaStatus(env, now) {
@@ -595,7 +606,10 @@ async function shipmentEvents(env, id) {
 
 async function setStar(request, env, id) {
   const body = await request.json().catch(() => ({}));
-  await env.DB.prepare("UPDATE shipments SET starred = ? WHERE id = ?").bind(body.starred ? 1 : 0, id).run();
+  // Starting point for "every update": from now on, not the whole history.
+  await env.DB.prepare("UPDATE shipments SET starred = ?, starred_seen_at = COALESCE(last_event_at, ?) WHERE id = ?")
+    .bind(body.starred ? 1 : 0, new Date().toISOString(), id)
+    .run();
   return json({ ok: true });
 }
 
@@ -609,6 +623,60 @@ async function setLabel(request, env, id) {
 async function removeShipment(env, id) {
   await env.DB.prepare("UPDATE shipments SET archived = 1 WHERE id = ?").bind(id).run();
   return json({ ok: true });
+}
+
+// ---------------------------------------------------------------- settings
+
+async function emailStatus(env, settings) {
+  return {
+    senderReady: !!(env.EMAIL && env.ALERT_FROM),
+    from: env.ALERT_FROM || "",
+    hasRecipients: settings.recipients.length > 0,
+    lastSent: (await getMeta(env, "alert_last_sent")) || "",
+    lastError: (await getMeta(env, "alert_error")) || "",
+  };
+}
+
+async function getSettings(env) {
+  const settings = await loadSettings(env);
+  return json({ settings, status: await emailStatus(env, settings) });
+}
+
+async function postSettings(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return json({ error: "Could not read that." }, 400);
+  }
+  const settings = await saveSettings(env, body && body.settings);
+  return json({ settings, status: await emailStatus(env, settings) });
+}
+
+async function testEmail(env, user) {
+  const settings = await loadSettings(env);
+  if (!env.EMAIL || !env.ALERT_FROM) return json({ error: "Email sending has not been set up for this tool yet." }, 503);
+  if (!settings.recipients.length) return json({ error: "Add at least one recipient and save first." }, 400);
+  const now = new Date().toISOString();
+  const email = composeEmail({
+    raised: [
+      {
+        state: "customs",
+        label: "Test shipment",
+        trackingNumber: "1Z000TEST000000000",
+        reason: "This is a test. No real shipment is affected.",
+        courier: "ups",
+        destCountry: "DE",
+        lastEventAt: now,
+        lastEventText: "Test requested by " + user.email,
+        lastEventLocation: "",
+      },
+    ],
+    boardUrl: (env.BOARD_URL || "").replace(/\/+$/, ""),
+  });
+  email.subject = "[Shipments] Test email";
+  const failures = await sendEmail(env, settings.recipients, email);
+  return json({ sent: settings.recipients.length - failures.length, failures });
 }
 
 function json(data, status = 200) {

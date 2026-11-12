@@ -24,13 +24,25 @@ The tool locks itself until sign-in is switched on, so there is no moment where 
 
 If step 5 shows "Locked" after signing in, tell Claude. It means Cloudflare is not passing the sign-in through to the Worker the way its documentation describes, and the fix is on the code side.
 
-## Settings you can change
+## Alerts
+
+The tool emails people when a shipment needs attention. Who, what and when are all chosen on the **Alert settings** page, linked from the top of the board. Nothing there needs a code change.
+
+One-off setup in Cloudflare, before any email can be sent:
+
+1. **Email Service > Email Routing:** switch it on for `dot-track.app`.
+2. **Email Routing > Destination Addresses:** add each person who should receive alerts. Cloudflare emails them a link, which they click once.
+3. On the tool's Alert settings page, list the same addresses and press **Save and send a test email**.
+
+Alerts are sent from `alerts@dot-track.app`. Sending to verified addresses is free. Sending to anyone else needs the Workers Paid plan.
+
+## Settings in the code
 
 In `wrangler.toml`:
 
 - `MAX_SHIPMENTS_PER_MONTH`: hard stop on new shipments each calendar month. Set to 10 for the Ship24 free plan.
-- `CUSTOMS_HOURS`: hours a parcel can sit with customs, unreleased, before it is flagged. Set to 24.
-- `STALL_DAYS`: working days without a scan before a shipment is flagged as Stalled. Set to 3.
+- `ALERT_FROM` and `BOARD_URL`: the sender address for alerts and the link they point back to.
+- `STALL_DAYS` and `CUSTOMS_HOURS`: starting values only. Once the Alert settings page has been saved, the page decides.
 
 ## The states
 
@@ -48,6 +60,5 @@ In `wrangler.toml`:
 
 ## Not built yet
 
-- Email or Teams alerts
 - Reading shipment emails automatically
-- Starred shipments currently pin to the top of their group. Once alerts exist, a star will also mean "send me every update"
+- Personal settings. Everyone shares one set of alert rules, and a star is shared too

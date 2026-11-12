@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS shipments (
   created_at TEXT NOT NULL,
   checked_at TEXT,
   delivered_at TEXT,
-  last_error TEXT
+  last_error TEXT,
+  alert_state TEXT,
+  starred_seen_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -40,3 +42,8 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_events_shipment ON events (shipment_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_shipments_open ON shipments (archived, delivered_at, checked_at);
+
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);

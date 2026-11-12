@@ -104,7 +104,7 @@ export const PAGE = `<!doctype html>
 <div class="wrap">
   <header>
     <h1>Shipment tracker</h1>
-    <div class="meta" id="meta">Loading</div>
+    <div class="meta"><span id="meta">Loading</span> <a href="/settings" style="color:var(--accent);margin-left:8px">Alert settings</a></div>
   </header>
 
   <section class="card add" aria-label="Add shipments">
