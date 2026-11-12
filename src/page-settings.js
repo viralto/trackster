@@ -13,6 +13,9 @@ ${THEME_HEAD}
 <style>
 ${THEME_CSS}
   .main { max-width: 1040px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #banners:empty + .section { margin-top: 0; }
+  #banners .banner:first-child { margin-top: 0; }
   .banner { border-radius: 8px; padding: 11px 14px; margin-top: 16px; font-size: 14px; }
   .banner.warn { background: var(--amber-wash); color: var(--amber-ink); }
   .banner.bad { background: var(--red-wash); color: var(--red-ink); }
@@ -38,10 +41,7 @@ ${THEME_CSS}
 <div class="shell">
 ${sidebar("settings")}
 <main class="main">
-  <div class="card pagehead">
-    <h1>Alert settings</h1>
-    <div class="tag">Choose who is emailed, about what, and when</div>
-  </div>
+  <h1 class="sr">Alert settings</h1>
 
   <div id="banners"></div>
 
