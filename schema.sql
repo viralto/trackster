@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS shipments (
   last_event_text TEXT,
   last_event_location TEXT,
   est_delivery TEXT,
+  first_est TEXT,
   dest_country TEXT,
   starred INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,

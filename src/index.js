@@ -32,6 +32,7 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(
       (async () => {
+        await ensureSchema(env);
         await refreshOpenShipments(env);
         try {
           await runAlerts(env, present);
@@ -69,7 +70,25 @@ function lockedOut() {
 
 // ---------------------------------------------------------------- routing
 
+// Small database changes are applied by the tool itself, once per start-up,
+// so a new version never depends on someone running a command by hand.
+let schemaReady = false;
+async function ensureSchema(env) {
+  if (schemaReady) return;
+  try {
+    await env.DB.prepare("ALTER TABLE shipments ADD COLUMN first_est TEXT").run();
+    // First run only: shipments still on the move keep their current estimate
+    // as the starting point. Delivered ones get no verdict, since the date we
+    // hold for them may already have been revised.
+    await env.DB.prepare("UPDATE shipments SET first_est = est_delivery WHERE first_est IS NULL AND delivered_at IS NULL").run();
+  } catch (e) {
+    // "duplicate column" means it is already there, which is the normal case.
+  }
+  schemaReady = true;
+}
+
 async function route(request, env, user) {
+  await ensureSchema(env);
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
@@ -148,6 +167,7 @@ function present(row, now, stallDays, customsHours) {
     lastEventText: row.last_event_text || "",
     lastEventLocation: row.last_event_location || "",
     estDelivery: row.est_delivery,
+    timing: timing(row),
     destCountry: row.dest_country || "",
     starred: !!row.starred,
     createdAt: row.created_at,
@@ -211,6 +231,20 @@ export function deriveState(row, now, stallDays, customsHours) {
 
   if (ms === "info_received") return { state: "label", reason: "" };
   return { state: "transit", reason: customsNote };
+}
+
+// Did it arrive when the carrier first said it would?
+// Carriers revise their estimate as a parcel slips, so the fair comparison
+// is against the first date we ever saw, not the latest one.
+export function timing(row) {
+  const day = (v) => (v ? String(v).slice(0, 10) : null);
+  const due = day(row.first_est) || (row.delivered_at ? null : day(row.est_delivery));
+  if (!due) return { status: row.delivered_at ? "unknown" : "none", due: null, revised: null, daysLate: null };
+  const latest = day(row.est_delivery);
+  const revised = latest && latest !== due ? latest : null;
+  if (!row.delivered_at) return { status: "due", due, revised, daysLate: null };
+  const daysLate = Math.round((Date.parse(day(row.delivered_at) + "T00:00:00Z") - Date.parse(due + "T00:00:00Z")) / 86400000);
+  return { status: daysLate > 0 ? "late" : "ontime", due, revised, daysLate };
 }
 
 function clip(text, max) {
@@ -537,7 +571,8 @@ async function storeTracking(env, shipmentId, tracking, nowIso) {
          milestone = ?, status_code = ?, customs_state = ?, customs_since = ?, customs_text = ?,
          courier = COALESCE(?, courier),
          last_event_at = ?, last_event_text = ?, last_event_location = ?,
-         est_delivery = ?, dest_country = COALESCE(?, dest_country),
+         est_delivery = COALESCE(?, est_delivery), first_est = COALESCE(first_est, ?),
+         dest_country = COALESCE(?, dest_country),
          delivered_at = ?, checked_at = ?, last_error = NULL
        WHERE id = ?`
     ).bind(
@@ -550,6 +585,7 @@ async function storeTracking(env, shipmentId, tracking, nowIso) {
       s.lastEventAt,
       s.lastEventText,
       s.lastEventLocation,
+      s.estDelivery,
       s.estDelivery,
       s.destCountry,
       s.deliveredAt,

@@ -49,6 +49,7 @@ ${THEME_CSS}
   .tn { font-size: 13.5px; color: var(--muted); letter-spacing: .02em; }
   .reason { color: var(--ink); margin-top: 2px; }
   .sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+  .sub.err { color: var(--red-ink); }
   .star { width: 40px; height: 40px; border-radius: 50%; border: 1px solid #dcdfe6; background: #fff; font-size: 18px;
     line-height: 1; padding: 0; color: var(--muted); }
   .star.on { background: var(--teal); border-color: var(--teal); color: #fff; }
@@ -251,6 +252,25 @@ ${WHO_JS}
     showStats(data.shipments);
   }
 
+  function niceDay(ymd) {
+    var d = new Date(ymd + "T12:00:00Z");
+    return isNaN(d) ? ymd : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  }
+  // One line on whether it is due, on time or late, against the carrier's first estimate.
+  function overdue(t) {
+    return !!t && t.status === "due" && t.due < new Date().toISOString().slice(0, 10);
+  }
+  function dueLine(t) {
+    if (!t || !t.due) return "";
+    if (t.status === "due") {
+      var now = t.revised ? ". Carrier now says " + niceDay(t.revised) : "";
+      return (overdue(t) ? "Was due " + niceDay(t.due) + ", not delivered yet" : "Due " + niceDay(t.due)) + now;
+    }
+    if (t.status === "ontime") return "Delivered on time. Was due " + niceDay(t.due);
+    if (t.status === "late") return "Delivered " + t.daysLate + (t.daysLate === 1 ? " day" : " days") + " late. Was due " + niceDay(t.due);
+    return "";
+  }
+
   function shipRow(s) {
     var def = STATE[s.state] || STATE.transit;
     var wrap = el("div", "ship");
@@ -274,6 +294,8 @@ ${WHO_JS}
       ? "Last scan " + ago(s.lastEventAt) + ": " + s.lastEventText + (s.lastEventLocation ? " (" + s.lastEventLocation + ")" : "")
       : "No scans yet. Added " + ago(s.createdAt) + ".";
     mid.appendChild(el("div", "sub", last));
+    var due = dueLine(s.timing);
+    if (due) mid.appendChild(el("div", "sub" + (s.timing.status === "late" || overdue(s.timing) ? " err" : ""), due));
     if (s.error) mid.appendChild(el("div", "sub err", "Last check failed: " + s.error));
     sum.appendChild(mid);
 

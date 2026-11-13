@@ -2,6 +2,8 @@
 import http from "node:http";
 
 const trackers = new Map();
+const calls = new Map();
+const dayFrom = (d) => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10) + "T00:00:00.000Z";
 let n = 0;
 const daysAgo = (d) => new Date(Date.now() - d * 86400000).toISOString();
 const ev = (id, tn, d, status, code, category, milestone, location, courier = "ups") => ({
@@ -9,7 +11,27 @@ const ev = (id, tn, d, status, code, category, milestone, location, courier = "u
   courierCode: courier, statusCode: code, statusCategory: category, statusMilestone: milestone,
 });
 
-function scenario(tn) {
+function scenario(tn, call = 1) {
+  // ONTIME: estimate seen in transit, then delivered on that day.
+  if (tn.startsWith("ONTIME")) return call < 2
+    ? { milestone: "in_transit", code: null, est: dayFrom(-1), events: [ev("g1", tn, 2, "Departed facility", null, null, "in_transit", "Koeln, DE")] }
+    : { milestone: "delivered", code: "delivery_delivered", est: dayFrom(-1), events: [
+        ev("g1", tn, 2, "Departed facility", null, null, "in_transit", "Koeln, DE"),
+        ev("g2", tn, 1, "Delivered", "delivery_delivered", "delivery", "delivered", "Berlin, DE")] };
+  // LATE: carrier moves its own goalposts, then delivers on the revised day.
+  if (tn.startsWith("LATE")) {
+    const first = ev("h1", tn, 5, "Departed facility", null, null, "in_transit", "Louisville, US");
+    if (call < 2) return { milestone: "in_transit", code: null, est: dayFrom(-3), events: [first] };
+    if (call < 3) return { milestone: "in_transit", code: null, est: dayFrom(-1), events: [first] };
+    return { milestone: "delivered", code: "delivery_delivered", est: dayFrom(-1), events: [first,
+      ev("h2", tn, 1, "Delivered", "delivery_delivered", "delivery", "delivered", "Austin, US")] };
+  }
+  // SLIP: still moving, estimate pushed back.
+  if (tn.startsWith("SLIP")) return { milestone: "in_transit", code: null, est: call < 2 ? dayFrom(1) : dayFrom(3),
+    events: [ev("i1", tn, 0.3, "Arrived at facility", null, null, "in_transit", "Paris, FR")] };
+  if (tn.startsWith("MOVING")) return { milestone: "in_transit", code: null, est: dayFrom(2), events: [
+    ev("f1", tn, 0.5, "Arrived at facility", null, null, "in_transit", "Koeln, DE"),
+  ]};
   if (tn.startsWith("CUSTOMS")) return { milestone: "in_transit", code: "customs_exception", events: [
     ev("a1", tn, 6, "Picked up", "transit_handover", "transit", "in_transit", "Guildford, GB"),
     ev("a2", tn, 5, "Arrived in destination country", "destination_arrival", "destination", "in_transit", "Cologne, DE"),
@@ -52,11 +74,12 @@ http.createServer((req, res) => {
     const m = req.url.match(/^\/public\/v1\/trackers\/([^/]+)\/results$/);
     if (req.method === "GET" && m && trackers.has(m[1])) {
       const tn = trackers.get(m[1]);
-      const s = scenario(tn);
+      calls.set(m[1], (calls.get(m[1]) || 0) + 1);
+      const s = scenario(tn, calls.get(m[1]));
       return send(200, { data: { trackings: [{
         tracker: { trackerId: m[1], trackingNumber: tn },
         shipment: { statusMilestone: s.milestone, statusCode: s.code, destinationCountryCode: "DE",
-          delivery: { estimatedDeliveryDate: null } },
+          delivery: { estimatedDeliveryDate: s.est || null } },
         events: s.events.slice().reverse(),
         statistics: { timestamps: {} },
       }] } });

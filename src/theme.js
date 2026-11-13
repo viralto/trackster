@@ -155,6 +155,14 @@ export const WHO_JS = `
       if (r.hideIfZero && !n) return;
       row(r.label, n, r.dot, r.key === "delivered" ? "sec-done" : "show-" + r.key, r.note);
     });
+    var judged = shipments.filter(function (s) { return s.timing && (s.timing.status === "ontime" || s.timing.status === "late"); });
+    if (judged.length) {
+      var ok = judged.filter(function (s) { return s.timing.status === "ontime"; }).length;
+      row("On time", ok + " of " + judged.length, "", "sec-done", "delivered by the carrier's first estimate, where one was captured");
+      box.lastChild.style.paddingLeft = "59px";
+      box.lastChild.firstChild.style.display = "none";
+      box.lastChild.style.gridTemplateColumns = "1fr auto";
+    }
     row("Open shipments", open, "", "sec-open", "everything not yet delivered", "total");
   }
 
