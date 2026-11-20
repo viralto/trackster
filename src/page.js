@@ -1,7 +1,7 @@
 // The board. One page, no build step. Kept in its own file so the engine
 // (index.js) can later serve a different screen without being touched.
 
-import { THEME_HEAD, THEME_CSS, WHO_JS, sidebar } from "./theme.js";
+import { THEME_HEAD, THEME_CSS, ROW_CSS, ROW_JS, WHO_JS, sidebar } from "./theme.js";
 
 export const PAGE = `<!doctype html>
 <html lang="en-GB">
@@ -29,40 +29,10 @@ ${THEME_CSS}
   .grouphead .count { background: var(--teal-pill); color: var(--teal-deep); border: 1px solid var(--teal-line);
     border-radius: 4px; padding: 0 8px; font-size: 12.5px; font-weight: 400; }
   .grouphead button { margin-left: auto; }
-  .ship { border-bottom: 1px solid var(--line); }
-  .ship:last-child { border-bottom: 0; }
-  .summary { display: grid; grid-template-columns: 28px 170px 1fr auto; gap: 14px; align-items: center;
-    padding: 16px 4px; cursor: pointer; }
-  .summary:hover { background: var(--row-alt); }
-  .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--grey-dot); justify-self: center; }
-  .d-customs, .d-problem { background: var(--red); }
-  .d-stalled, .d-notfound { background: var(--amber); }
-  .d-transit, .d-out { background: var(--teal); }
-  .d-delivered { background: var(--green); }
-  .pill { display: inline-block; border-radius: 4px; padding: 4px 10px; font-size: 12.5px; font-weight: 400;
-    letter-spacing: .03em; text-transform: uppercase; white-space: nowrap;
-    background: var(--teal-pill); color: var(--teal-deep); border: 1px solid var(--teal-line); }
-  .s-customs, .s-problem { background: var(--red-wash); color: var(--red-ink); border-color: #f3cfd4; }
-  .s-stalled, .s-notfound { background: var(--amber-wash); color: var(--amber-ink); border-color: #f3e0b3; }
-  .s-label, .s-looking, .s-delivered { background: #f5f5f6; color: var(--text); border-color: var(--line); }
-  .title { color: var(--ink); font-weight: 500; }
-  .tn { font-size: 13.5px; color: var(--muted); letter-spacing: .02em; }
-  .reason { color: var(--ink); margin-top: 2px; }
-  .sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
-  .sub.err { color: var(--red-ink); }
-  .star { width: 40px; height: 40px; border-radius: 50%; border: 1px solid #dcdfe6; background: #fff; font-size: 18px;
-    line-height: 1; padding: 0; color: var(--muted); }
-  .star.on { background: var(--teal); border-color: var(--teal); color: #fff; }
-  .detail { padding: 2px 4px 18px 216px; }
-  .timeline { list-style: none; margin: 0 0 14px; padding: 0; border-left: 2px solid var(--line); }
-  .timeline li { padding: 4px 0 8px 14px; position: relative; color: var(--ink); }
-  .timeline li::before { content: ""; position: absolute; left: -6px; top: 11px; width: 10px; height: 10px;
-    border-radius: 50%; background: var(--teal); border: 2px solid #fff; }
-  .timeline li.c-hold::before { background: var(--red); }
-  .timeline li.c-in::before { background: var(--amber); }
-  .timeline li.c-cleared::before { background: var(--green); }
-  .timeline li.c-hold, .timeline li.c-in { font-weight: 400; }
-  .timeline .when { color: var(--muted); font-size: 13px; }
+  .grouphead .headlinks { margin-left: auto; display: flex; gap: 18px; align-items: center; }
+  .grouphead .headlinks button { margin-left: 0; }
+  .grouphead .headlinks a { font-size: 14.5px; text-decoration: none; }
+${ROW_CSS}
   .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .tools input[type=text] { max-width: 280px; padding: 5px 9px; font-size: 13.5px; }
   .empty { padding: 20px 4px; color: var(--muted); }
@@ -101,7 +71,7 @@ ${sidebar("board")}
 
   <section class="card group" id="sec-done">
     <div class="grouphead">Delivered, last 14 days <span class="count" id="c-done">0</span>
-      <button class="link" id="toggleDone">Show</button></div>
+      <span class="headlinks"><a href="/history">All history</a><button class="link" id="toggleDone">Show</button></span></div>
     <div id="g-done" hidden></div>
   </section>
 </main>
@@ -252,25 +222,7 @@ ${WHO_JS}
     showStats(data.shipments);
   }
 
-  function niceDay(ymd) {
-    var d = new Date(ymd + "T12:00:00Z");
-    return isNaN(d) ? ymd : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
-  }
-  // One line on whether it is due, on time or late, against the carrier's first estimate.
-  function overdue(t) {
-    return !!t && t.status === "due" && t.due < new Date().toISOString().slice(0, 10);
-  }
-  function dueLine(t) {
-    if (!t || !t.due) return "";
-    if (t.status === "due") {
-      var now = t.revised ? ". Carrier now says " + niceDay(t.revised) : "";
-      return (overdue(t) ? "Was due " + niceDay(t.due) + ", not delivered yet" : "Due " + niceDay(t.due)) + now;
-    }
-    if (t.status === "ontime") return "Delivered on time. Was due " + niceDay(t.due);
-    if (t.status === "late") return "Delivered " + t.daysLate + (t.daysLate === 1 ? " day" : " days") + " late. Was due " + niceDay(t.due);
-    return "";
-  }
-
+${ROW_JS}
   function shipRow(s) {
     var def = STATE[s.state] || STATE.transit;
     var wrap = el("div", "ship");
@@ -373,7 +325,7 @@ ${WHO_JS}
       });
     });
     var remove = el("button", "small", "Remove");
-    remove.title = "Hides it from the board.";
+    remove.title = "Hides it from the board. It stays in History, where it can be restored.";
     remove.addEventListener("click", function () {
       if (remove.dataset.sure !== "1") {
         remove.dataset.sure = "1";

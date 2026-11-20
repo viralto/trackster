@@ -9,6 +9,7 @@
 
 import { PAGE } from "./page.js";
 import { SETTINGS_PAGE } from "./page-settings.js";
+import { HISTORY_PAGE } from "./page-history.js";
 import { loadSettings, saveSettings, getMeta } from "./settings.js";
 import { runAlerts, composeEmail, sendEmail } from "./alerts.js";
 
@@ -93,8 +94,8 @@ async function route(request, env, user) {
   const path = url.pathname;
   const method = request.method;
 
-  if (method === "GET" && (path === "/" || path === "/settings")) {
-    return new Response(path === "/" ? PAGE : SETTINGS_PAGE, {
+  if (method === "GET" && (path === "/" || path === "/settings" || path === "/history")) {
+    return new Response(path === "/" ? PAGE : path === "/history" ? HISTORY_PAGE : SETTINGS_PAGE, {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
@@ -115,12 +116,14 @@ async function route(request, env, user) {
   }
 
   if (method === "GET" && path === "/api/shipments") return listShipments(env, user);
+  if (method === "GET" && path === "/api/history") return listHistory(env, user, url);
+  if (method === "GET" && path === "/api/history.csv") return historyCsv(env, url);
   if (method === "GET" && path === "/api/settings") return getSettings(env, user);
   if (method === "POST" && path === "/api/settings") return postSettings(request, env, user);
   if (method === "POST" && path === "/api/settings/test") return testEmail(env, user);
   if (method === "POST" && path === "/api/shipments") return addShipments(request, env, user);
 
-  const m = path.match(/^\/api\/shipments\/(\d+)(?:\/(events|star|refresh|label|remove))?$/);
+  const m = path.match(/^\/api\/shipments\/(\d+)(?:\/(events|star|refresh|label|remove|restore))?$/);
   if (m) {
     const id = Number(m[1]);
     const action = m[2];
@@ -129,6 +132,7 @@ async function route(request, env, user) {
     if (method === "POST" && action === "label") return setLabel(request, env, id);
     if (method === "POST" && action === "refresh") return refreshOne(env, id);
     if (method === "POST" && action === "remove") return removeShipment(env, id);
+    if (method === "POST" && action === "restore") return restoreShipment(env, id);
   }
   return json({ error: "Not found" }, 404);
 }
@@ -152,6 +156,117 @@ async function listShipments(env, user) {
   const shipments = results.map((row) => present(row, now, stallDays, customsHours));
   const quota = await quotaStatus(env, now);
   return json({ shipments, quota, user: user.email, stallDays, now: now.toISOString() });
+}
+
+// ---------------------------------------------------------------- history
+//
+// Nothing is ever deleted. History is everything that has been delivered,
+// plus anything someone removed from the board, newest first.
+
+const HISTORY_PAGE_SIZE = 50;
+const HISTORY_WHEN = "COALESCE(delivered_at, created_at)";
+
+function historyFilter(url) {
+  const q = (url.searchParams.get("q") || "").trim().slice(0, 60);
+  let where = "(delivered_at IS NOT NULL OR archived = 1)";
+  const binds = [];
+  if (q) {
+    const like = "%" + q.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
+    where +=
+      " AND (tracking_number LIKE ? ESCAPE '\\' OR label LIKE ? ESCAPE '\\' OR dest_country LIKE ? ESCAPE '\\'" +
+      " OR courier LIKE ? ESCAPE '\\' OR last_event_location LIKE ? ESCAPE '\\')";
+    binds.push(like, like, like, like, like);
+  }
+  return { q, where, binds };
+}
+
+async function listHistory(env, user, url) {
+  const now = new Date();
+  const settings = await loadSettings(env);
+  const f = historyFilter(url);
+  const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10) || 0);
+
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM shipments WHERE ${f.where} ORDER BY ${HISTORY_WHEN} DESC, id DESC LIMIT ? OFFSET ?`
+  )
+    .bind(...f.binds, HISTORY_PAGE_SIZE + 1, offset)
+    .all();
+  const more = results.length > HISTORY_PAGE_SIZE;
+  const items = results.slice(0, HISTORY_PAGE_SIZE).map((row) => ({
+    ...present(row, now, settings.stallDays, settings.customsHours),
+    removed: !!row.archived,
+    month: String(row.delivered_at || row.created_at || "").slice(0, 7),
+  }));
+
+  // Month totals come from the whole history, not just the rows on screen.
+  // Removed shipments are left out of the counts: they are mostly typos.
+  const live = "archived = 0 AND delivered_at IS NOT NULL";
+  const stats = await env.DB.prepare(
+    `SELECT substr(${HISTORY_WHEN}, 1, 7) AS month,
+            SUM(CASE WHEN ${live} THEN 1 ELSE 0 END) AS delivered,
+            SUM(CASE WHEN ${live} AND first_est IS NOT NULL THEN 1 ELSE 0 END) AS judged,
+            SUM(CASE WHEN ${live} AND first_est IS NOT NULL
+                      AND substr(delivered_at, 1, 10) <= substr(first_est, 1, 10) THEN 1 ELSE 0 END) AS ontime,
+            SUM(CASE WHEN archived = 1 THEN 1 ELSE 0 END) AS removed
+     FROM shipments WHERE ${f.where} GROUP BY month`
+  )
+    .bind(...f.binds)
+    .all();
+  const months = {};
+  let total = 0;
+  for (const m of stats.results) {
+    months[m.month] = { delivered: m.delivered, judged: m.judged, ontime: m.ontime, removed: m.removed };
+    total += m.delivered + m.removed;
+  }
+  return json({ items, months, total, nextOffset: more ? offset + HISTORY_PAGE_SIZE : null, q: f.q, user: user.email });
+}
+
+// The same list as a spreadsheet file. Follows the search box.
+async function historyCsv(env, url) {
+  const f = historyFilter(url);
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM shipments WHERE ${f.where} ORDER BY ${HISTORY_WHEN} DESC, id DESC LIMIT 20000`
+  )
+    .bind(...f.binds)
+    .all();
+  const day = (v) => (v ? String(v).slice(0, 10) : "");
+  const lines = [
+    ["Tracking number", "Note", "Carrier", "Destination", "Added", "Delivered", "First estimate", "On time", "Days late", "Last scan", "Last scan place", "Removed from board"],
+  ];
+  for (const row of results) {
+    const t = timing(row);
+    lines.push([
+      // Long all-digit numbers get mangled by spreadsheets unless marked as text.
+      /^\d{11,}$/.test(row.tracking_number) ? { text: row.tracking_number } : row.tracking_number,
+      row.label || "",
+      (row.courier || "").toUpperCase(),
+      row.dest_country || "",
+      day(row.created_at),
+      day(row.delivered_at),
+      t.due || "",
+      t.status === "ontime" ? "Yes" : t.status === "late" ? "No" : "",
+      t.status === "late" ? String(t.daysLate) : "",
+      row.last_event_text || "",
+      row.last_event_location || "",
+      row.archived ? "Yes" : "",
+    ]);
+  }
+  const body = "\uFEFF" + lines.map((l) => l.map(csvCell).join(",")).join("\r\n") + "\r\n";
+  return new Response(body, {
+    headers: {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": 'attachment; filename="shipment-history-' + new Date().toISOString().slice(0, 10) + '.csv"',
+      "cache-control": "no-store",
+    },
+  });
+}
+
+function csvCell(v) {
+  if (v && typeof v === "object") return '"=""' + String(v.text).replace(/"/g, "") + '"""';
+  let s = String(v == null ? "" : v);
+  // Carrier text is outside our control: never let it be read as a formula.
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
 function present(row, now, stallDays, customsHours) {
@@ -684,6 +799,11 @@ async function setLabel(request, env, id) {
 
 async function removeShipment(env, id) {
   await env.DB.prepare("UPDATE shipments SET archived = 1 WHERE id = ?").bind(id).run();
+  return json({ ok: true });
+}
+
+async function restoreShipment(env, id) {
+  await env.DB.prepare("UPDATE shipments SET archived = 0 WHERE id = ?").bind(id).run();
   return json({ ok: true });
 }
 

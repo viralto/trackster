@@ -93,10 +93,72 @@ export const THEME_CSS = `
   }
 `;
 
+// Shipment rows: used by the board and by History.
+export const ROW_CSS = `
+  .ship { border-bottom: 1px solid var(--line); }
+  .ship:last-child { border-bottom: 0; }
+  .summary { display: grid; grid-template-columns: 28px 170px 1fr auto; gap: 14px; align-items: center;
+    padding: 16px 4px; cursor: pointer; }
+  .summary:hover { background: var(--row-alt); }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--grey-dot); justify-self: center; }
+  .d-customs, .d-problem { background: var(--red); }
+  .d-stalled, .d-notfound { background: var(--amber); }
+  .d-transit, .d-out { background: var(--teal); }
+  .d-delivered { background: var(--green); }
+  .pill { display: inline-block; border-radius: 4px; padding: 4px 10px; font-size: 12.5px; font-weight: 400;
+    letter-spacing: .03em; text-transform: uppercase; white-space: nowrap;
+    background: var(--teal-pill); color: var(--teal-deep); border: 1px solid var(--teal-line); }
+  .s-customs, .s-problem { background: var(--red-wash); color: var(--red-ink); border-color: #f3cfd4; }
+  .s-stalled, .s-notfound { background: var(--amber-wash); color: var(--amber-ink); border-color: #f3e0b3; }
+  .s-label, .s-looking, .s-delivered { background: #f5f5f6; color: var(--text); border-color: var(--line); }
+  .title { color: var(--ink); font-weight: 500; }
+  .tn { font-size: 13.5px; color: var(--muted); letter-spacing: .02em; }
+  .reason { color: var(--ink); margin-top: 2px; }
+  .sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+  .sub.err { color: var(--red-ink); }
+  .star { width: 40px; height: 40px; border-radius: 50%; border: 1px solid #dcdfe6; background: #fff; font-size: 18px;
+    line-height: 1; padding: 0; color: var(--muted); }
+  .star.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+  .detail { padding: 2px 4px 18px 216px; }
+  .timeline { list-style: none; margin: 0 0 14px; padding: 0; border-left: 2px solid var(--line); }
+  .timeline li { padding: 4px 0 8px 14px; position: relative; color: var(--ink); }
+  .timeline li::before { content: ""; position: absolute; left: -6px; top: 11px; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--teal); border: 2px solid #fff; }
+  .timeline li.c-hold::before { background: var(--red); }
+  .timeline li.c-in::before { background: var(--amber); }
+  .timeline li.c-cleared::before { background: var(--green); }
+  .timeline li.c-hold, .timeline li.c-in { font-weight: 400; }
+  .timeline .when { color: var(--muted); font-size: 13px; }
+`;
+
+// Due / on time / late wording, shared by both pages.
+export const ROW_JS = `
+  function niceDay(ymd) {
+    var d = new Date(ymd + "T12:00:00Z");
+    return isNaN(d) ? ymd : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  }
+  // One line on whether it is due, on time or late, against the carrier's first estimate.
+  function overdue(t) {
+    return !!t && t.status === "due" && t.due < new Date().toISOString().slice(0, 10);
+  }
+  function dueLine(t) {
+    if (!t || !t.due) return "";
+    if (t.status === "due") {
+      var now = t.revised ? ". Carrier now says " + niceDay(t.revised) : "";
+      return (overdue(t) ? "Was due " + niceDay(t.due) + ", not delivered yet" : "Due " + niceDay(t.due)) + now;
+    }
+    if (t.status === "ontime") return "Delivered on time. Was due " + niceDay(t.due);
+    if (t.status === "late") return "Delivered " + t.daysLate + (t.daysLate === 1 ? " day" : " days") + " late. Was due " + niceDay(t.due);
+    return "";
+  }
+
+`;
+
+const ICON_CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
 const ICON_BOX = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9M7.5 5.2l9 4.6"/></svg>';
 const ICON_BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0M12 3V2"/></svg>';
 
-// The left-hand column. active is "board" or "settings".
+// The left-hand column. active is "board", "history" or "settings".
 export function sidebar(active) {
   return `<aside class="side">
     <div class="brand"><div class="name">Shipments</div><div class="sub">UPS and FedEx tracking</div></div>
@@ -104,6 +166,7 @@ export function sidebar(active) {
     <div class="navlabel">Menu</div>
     <nav class="nav" aria-label="Main">
       <a href="/"${active === "board" ? ' class="on" aria-current="page"' : ""}>${ICON_BOX}<span>Shipments</span></a>
+      <a href="/history"${active === "history" ? ' class="on" aria-current="page"' : ""}>${ICON_CLOCK}<span>History</span></a>
       <a href="/settings"${active === "settings" ? ' class="on" aria-current="page"' : ""}>${ICON_BELL}<span>Alert settings</span></a>
     </nav>
     <div class="navlabel">At a glance</div>
