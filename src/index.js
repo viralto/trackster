@@ -11,7 +11,7 @@ import { PAGE } from "./page.js";
 import { SETTINGS_PAGE } from "./page-settings.js";
 import { HISTORY_PAGE } from "./page-history.js";
 import { ADD_PAGE } from "./page-add.js";
-import { loadSettings, saveSettings, getMeta } from "./settings.js";
+import { loadSettings, saveSettings, getMeta, setMeta } from "./settings.js";
 import { runAlerts, composeEmail, sendEmail } from "./alerts.js";
 
 const SHIP24_DEFAULT_BASE = "https://api.ship24.com/public/v1";
@@ -913,6 +913,8 @@ async function testEmail(env, user) {
   });
   email.subject = "[Dot Logistics] Test email";
   const failures = await sendEmail(env, settings.recipients, email);
+  // A test is the freshest evidence of whether email works, so it replaces any older failure note.
+  await setMeta(env, "alert_error", failures.length ? new Date().toISOString() + " " + failures.join("; ") : "");
   return json({ sent: settings.recipients.length - failures.length, failures });
 }
 

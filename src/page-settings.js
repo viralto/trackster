@@ -279,6 +279,9 @@ ${WHO_JS}
     save().then(function () {
       return api("POST", "/api/settings/test", {});
     }).then(function (j) {
+      // Redraw the banners: the test has just replaced any older failure note.
+      return api("GET", "/api/settings").then(show).catch(function () {}).then(function () { return j; });
+    }).then(function (j) {
       if (j.failures && j.failures.length) say("Sent to " + j.sent + ". Failed: " + j.failures.join("; "), true);
       else say("Test email sent to " + j.sent + (j.sent === 1 ? " address" : " addresses") + ". Check the inbox, and the junk folder the first time.");
     }).catch(function (e) { say(e.message, true); }).then(function () { $("test").disabled = false; });
