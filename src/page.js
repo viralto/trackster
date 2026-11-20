@@ -1,7 +1,7 @@
 // The board. One page, no build step. Kept in its own file so the engine
 // (index.js) can later serve a different screen without being touched.
 
-import { THEME_HEAD, THEME_CSS, ROW_CSS, ROW_JS, WHO_JS, sidebar } from "./theme.js";
+import { THEME_HEAD, THEME_CSS, ROW_CSS, ROW_JS, FILTER_CSS, FILTER_HTML, FILTER_JS, WHO_JS, sidebar } from "./theme.js";
 
 export const PAGE = `<!doctype html>
 <html lang="en-GB">
@@ -15,16 +15,10 @@ ${THEME_HEAD}
 ${THEME_CSS}
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .main > .section:first-of-type { margin-top: 0; }
-  .add label { color: var(--ink); font-weight: 500; display: block; margin-bottom: 4px; }
-  textarea { width: 100%; min-height: 76px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
-  .row-actions { display: flex; align-items: center; gap: 14px; margin-top: 12px; flex-wrap: wrap; }
-  .meta { color: var(--muted); font-size: 13.5px; }
-  .notice { margin-top: 10px; font-size: 14px; }
-  .notice ul { margin: 4px 0 0; padding-left: 18px; }
+  .notice { margin: 10px 4px 0; font-size: 14px; }
+  .notice:empty { display: none; }
   .err { color: var(--red-ink); }
-  .findbar { padding: 14px 26px; }
-  .findbar input[type=text] { width: 100%; padding: 10px 12px; }
-  .findbar .meta { margin-top: 8px; }
+${FILTER_CSS}
 
   .group { margin-top: 24px; padding: 6px 26px 10px; }
   .grouphead { display: flex; align-items: center; gap: 10px; padding: 16px 0 14px; border-bottom: 1px solid var(--line);
@@ -54,24 +48,8 @@ ${sidebar("board")}
 <main class="main">
   <h1 class="sr">Shipments</h1>
 
-  <section class="card section add" aria-label="Add shipments">
-    <label for="paste">Add shipments</label>
-    <p class="hint">One tracking number per line. Add a note after a comma if you like, for example:
-      1Z999AA10123456784, Acme order 4471</p>
-    <textarea id="paste" spellcheck="false" autocomplete="off"></textarea>
-    <div class="row-actions">
-      <button class="primary" id="addBtn">Add to tracker</button>
-      <span class="meta" id="quota"></span>
-    </div>
-    <div class="notice" id="addNotice" role="status"></div>
-  </section>
-
-  <section class="card section findbar" aria-label="Find a shipment">
-    <label class="sr" for="find">Find a shipment on the board</label>
-    <input type="text" id="find" autocomplete="off" spellcheck="false"
-      placeholder="Find by customer or note, tracking number, carrier, place or country code (DE, US)">
-    <div class="meta" id="findMeta" role="status" hidden></div>
-  </section>
+${FILTER_HTML}
+  <div class="notice err" id="boardNotice" role="status"></div>
 
   <section class="card group" id="sec-open">
     <div class="grouphead"><span id="openTitle">Open shipments</span> <span class="count" id="c-open">0</span>
@@ -90,6 +68,7 @@ ${sidebar("board")}
 <script>
 (function () {
 ${WHO_JS}
+${FILTER_JS}
   var STATE = {
     customs:   { label: "Customs hold",     group: "open", order: 0 },
     problem:   { label: "Problem",          group: "open", order: 1 },
@@ -156,10 +135,10 @@ ${WHO_JS}
   function load() {
     return api("GET", "/api/shipments").then(function (j) {
       data = j;
+      $("boardNotice").textContent = "";
       render();
     }).catch(function (e) {
-      $("addNotice").className = "notice err";
-      $("addNotice").textContent = "Could not load shipments: " + e.message;
+      $("boardNotice").textContent = "Could not load shipments: " + e.message;
     });
   }
 
@@ -184,20 +163,10 @@ ${WHO_JS}
     }, veryNew ? 20000 : 120000);
   }
 
-  // The find box narrows what is on the board. It looks at the note (where the
-  // customer usually lives), the tracking number, carrier, country and last scan place.
-  var term = "";
-  function matches(s) {
-    if (!term) return true;
-    // Two letters on their own mean a country code. Otherwise "de" would also find every FedEx parcel.
-    if (/^[a-z]{2}$/.test(term)) return String(s.destCountry || "").toLowerCase() === term;
-    var hay = [s.label, s.trackingNumber, s.courier, s.destCountry, s.lastEventLocation].join(" ").toLowerCase();
-    return hay.indexOf(term) !== -1;
-  }
-
   function render() {
     var groups = { open: [], done: [] };
     var found = 0;
+    var narrowed = filterOn();
     data.shipments.forEach(function (s) {
       var def = STATE[s.state] || STATE.transit;
       groups[def.group].push(s);
@@ -213,22 +182,29 @@ ${WHO_JS}
       box.textContent = "";
       var list = groups[g];
       var total = list.length;
-      list = list.filter(matches);
+      list = list.filter(filterMatches);
       if (g === "open") {
         if (statFilter) list = list.filter(function (s) { return statFilter.states.indexOf(s.state) !== -1; });
         $("openTitle").textContent = statFilter ? statFilter.label : "Open shipments";
-        $("c-open").textContent = statFilter || term ? list.length + " of " + total : String(total);
+        $("c-open").textContent = statFilter || narrowed ? list.length + " of " + total : String(total);
         $("showAll").hidden = !statFilter;
       } else {
-        $("c-" + g).textContent = term ? list.length + " of " + total : String(total);
-        if (term && list.length) setDone(true);
+        $("c-" + g).textContent = narrowed ? list.length + " of " + total : String(total);
+        if (narrowed && list.length) setDone(true);
       }
       found += list.length;
       if (!list.length) {
-        box.appendChild(el("div", "empty", term
+        box.appendChild(el("div", "empty", narrowed
           ? (g === "done" ? "Nothing delivered in the last 14 days matches." : "No open shipments match.")
           : g === "done" ? "Nothing delivered in the last 14 days." :
             statFilter ? "No shipments are in this state right now." : "No open shipments."));
+        if (g === "open" && !narrowed && !statFilter && !total) {
+          var go = el("a", null, "Add some shipments");
+          go.href = "/add";
+          box.lastChild.appendChild(document.createTextNode(" "));
+          box.lastChild.appendChild(go);
+          box.lastChild.appendChild(document.createTextNode("."));
+        }
       }
       list.forEach(function (s) { box.appendChild(shipRow(s)); });
     });
@@ -241,19 +217,14 @@ ${WHO_JS}
     });
     if (reveal) setDone(true);
     data.shipments.forEach(function (s) { lastState[s.id] = s.state; });
-    $("quota").textContent = data.quota.used >= data.quota.limit
-      ? "This month's tracking allowance has been used up. New shipments can be added again next month." : "";
-    $("addBtn").disabled = data.quota.used >= data.quota.limit;
-    var fm = $("findMeta");
-    fm.hidden = !term;
-    if (term) {
-      fm.textContent = (found === 1 ? "1 shipment on the board matches. " : found + " shipments on the board match. ") +
-        "Older ones are in ";
-      var a = el("a", null, "History");
-      a.href = "/history?q=" + encodeURIComponent($("find").value.trim());
-      fm.appendChild(a);
-      fm.appendChild(document.createTextNode("."));
-    }
+    setMonths(data.firstMonth);
+    var hand = el("span");
+    hand.appendChild(document.createTextNode(" Older ones are in "));
+    var link = el("a", null, "History");
+    link.href = "/history?" + filterQuery();
+    hand.appendChild(link);
+    hand.appendChild(document.createTextNode("."));
+    showFilterMeta(found === 1 ? "1 shipment on the board" : found + " shipments on the board", hand);
     chaseNewOnes();
     showUser(data.user);
     showStats(data.shipments);
@@ -383,75 +354,7 @@ ${ROW_JS}
     return d;
   }
 
-  var RESULT_TEXT = {
-    added: "added",
-    duplicate: "already on the board",
-    restored: "was removed before, now back on the board",
-    over_limit: "not added: this month's tracking allowance has been used up",
-    failed: "not added: the tracking service rejected it",
-    suspect: "not added"
-  };
-
-  function norm(tn) { return String(tn || "").replace(/\\s+/g, "").toUpperCase(); }
-
-  function submit(items) {
-    var notice = $("addNotice");
-    var btn = $("addBtn");
-    var labels = {};
-    items.forEach(function (x) { labels[norm(x.trackingNumber)] = x.label || ""; });
-    notice.textContent = "";
-    notice.className = "notice";
-    btn.disabled = true;
-    btn.textContent = "Adding";
-    return api("POST", "/api/shipments", { items: items }).then(function (j) {
-      var ul = el("ul");
-      var allGood = true;
-      j.report.forEach(function (r) {
-        if (r.result !== "added") allGood = false;
-        var li = el("li", null, r.trackingNumber + ": " + (RESULT_TEXT[r.result] || r.result) +
-          (r.detail ? ". " + r.detail : ""));
-        if (r.result === "suspect") {
-          var force = el("button", "small", "Add it anyway");
-          force.style.marginLeft = "8px";
-          force.title = "Adds it without checking that the number is the right shape";
-          force.addEventListener("click", function () {
-            submit([{ trackingNumber: r.trackingNumber, label: labels[r.trackingNumber] || "", force: true }]);
-          });
-          li.appendChild(force);
-        }
-        ul.appendChild(li);
-      });
-      notice.appendChild(ul);
-      if (allGood) $("paste").value = "";
-      return load();
-    }).catch(function (e) {
-      notice.className = "notice err";
-      notice.textContent = e.message;
-    }).then(function () {
-      btn.textContent = "Add to tracker";
-      btn.disabled = data ? data.quota.used >= data.quota.limit : false;
-    });
-  }
-
-  $("addBtn").addEventListener("click", function () {
-    var items = $("paste").value.split(/\\r?\\n/).map(function (line) {
-      var i = line.indexOf(",");
-      var tn = (i === -1 ? line : line.slice(0, i)).trim();
-      var label = i === -1 ? "" : line.slice(i + 1).trim();
-      return { trackingNumber: tn, label: label };
-    }).filter(function (x) { return x.trackingNumber; });
-    if (!items.length) {
-      $("addNotice").className = "notice";
-      $("addNotice").textContent = "Paste at least one tracking number.";
-      return;
-    }
-    submit(items);
-  });
-
-  $("find").addEventListener("input", function () {
-    term = $("find").value.trim().toLowerCase();
-    if (data) render();
-  });
+  initFilters(function () { if (data) render(); });
 
   $("toggleDone").addEventListener("click", function () {
     doneTouched = true;

@@ -1,7 +1,7 @@
 // History: every shipment that has been delivered or removed, newest first.
 // Reads /api/history a page at a time; the search box is answered by the engine.
 
-import { THEME_HEAD, THEME_CSS, ROW_CSS, ROW_JS, WHO_JS, sidebar } from "./theme.js";
+import { THEME_HEAD, THEME_CSS, ROW_CSS, ROW_JS, FILTER_CSS, FILTER_HTML, FILTER_JS, WHO_JS, sidebar } from "./theme.js";
 
 export const HISTORY_PAGE = `<!doctype html>
 <html lang="en-GB">
@@ -15,12 +15,12 @@ ${THEME_HEAD}
 ${THEME_CSS}
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .main > .section:first-of-type { margin-top: 0; }
-  .find { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-  .find input[type=text] { flex: 1; min-width: 220px; padding: 10px 12px; }
-  .find a.dl { text-decoration: none; border: 1px solid #dcdfe6; border-radius: 6px; padding: 8px 16px; font-weight: 400;
+${FILTER_CSS}
+  .tools-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 16px 4px 0; }
+  a.dl { text-decoration: none; border: 1px solid #dcdfe6; border-radius: 6px; padding: 8px 16px; font-weight: 400;
     color: var(--text); background: #fff; white-space: nowrap; }
-  .find a.dl:hover { border-color: var(--teal); color: var(--teal-deep); }
-  .meta { color: var(--muted); font-size: 13.5px; margin-top: 10px; }
+  a.dl:hover { border-color: var(--teal); color: var(--teal-deep); }
+  .meta { color: var(--muted); font-size: 13.5px; }
   .err { color: var(--red-ink); }
   .group { margin-top: 24px; padding: 6px 26px 10px; }
   .grouphead { display: flex; align-items: baseline; gap: 16px; padding: 16px 0 14px; border-bottom: 1px solid var(--line);
@@ -40,15 +40,11 @@ ${sidebar("history")}
 <main class="main">
   <h1 class="sr">Shipment history</h1>
 
-  <section class="card section" aria-label="Search history">
-    <div class="find">
-      <label class="sr" for="q">Search history</label>
-      <input type="text" id="q" autocomplete="off" spellcheck="false"
-        placeholder="Search by customer or note, tracking number, carrier, place or country code (DE, US)">
-      <a class="dl" id="dl" href="/api/history.csv">Download as spreadsheet</a>
-    </div>
-    <div class="meta" id="meta" role="status">&nbsp;</div>
-  </section>
+${FILTER_HTML}
+  <div class="tools-row">
+    <span class="meta" id="meta" role="status">&nbsp;</span>
+    <a class="dl" id="dl" href="/api/history.csv">Download as spreadsheet</a>
+  </div>
 
   <div id="list"></div>
   <div class="more"><button id="more" hidden>Show more</button></div>
@@ -58,6 +54,7 @@ ${sidebar("history")}
 <script>
 (function () {
 ${WHO_JS}
+${FILTER_JS}
   var STATE_LABEL = {
     customs: "Customs hold", problem: "Problem", stalled: "Stalled", notfound: "Not found",
     out: "Out for delivery", transit: "In transit", label: "Label created", looking: "Looking it up",
@@ -66,7 +63,6 @@ ${WHO_JS}
   var items = [];      // rows loaded so far
   var months = {};     // month totals from the engine
   var nextOffset = null;
-  var query = "";
   var open = {};
   var eventsCache = {};
   var asked = 0;       // guards against a slow answer overwriting a newer search
@@ -106,7 +102,9 @@ ${ROW_JS}
 
   function fetchPage(offset) {
     var mine = ++asked;
-    var path = "/api/history?offset=" + offset + (query ? "&q=" + encodeURIComponent(query) : "");
+    var fq = filterQuery();
+    var narrowed = filterOn();
+    var path = "/api/history?offset=" + offset + (fq ? "&" + fq : "");
     return api("GET", path).then(function (j) {
       if (mine !== asked) return;
       items = offset ? items.concat(j.items) : j.items;
@@ -116,9 +114,10 @@ ${ROW_JS}
       var shown = items.length;
       $("meta").className = "meta";
       $("meta").textContent = !j.total
-        ? (query ? "Nothing in history matches that." : "Nothing here yet. Shipments appear once they are delivered or removed.")
-        : (shown < j.total ? "Showing " + shown + " of " + j.total : j.total + (j.total === 1 ? " shipment" : " shipments")) +
-          (query ? " matching your search" : "");
+        ? (narrowed ? "Nothing in history matches that." : "Nothing here yet. Shipments appear once they are delivered or removed.")
+        : (shown < j.total ? "Showing " + shown + " of " + j.total : j.total + (j.total === 1 ? " shipment" : " shipments"));
+      setMonths(j.firstMonth);
+      showFilterMeta(j.total === 1 ? "1 shipment in history" : j.total + " shipments in history");
       render();
     }).catch(function (e) {
       if (mine !== asked) return;
@@ -157,7 +156,8 @@ ${ROW_JS}
       box.appendChild(shipRow(s));
     });
     $("more").hidden = nextOffset === null;
-    $("dl").href = "/api/history.csv" + (query ? "?q=" + encodeURIComponent(query) : "");
+    var fq = filterQuery();
+    $("dl").href = "/api/history.csv" + (fq ? "?" + fq : "");
   }
 
   function shipRow(s) {
@@ -244,16 +244,12 @@ ${ROW_JS}
     return d;
   }
 
+  // Typing waits a moment before asking; buttons and dates ask straight away.
   var typing = null;
-  $("q").addEventListener("input", function () {
+  initFilters(function (now) {
     clearTimeout(typing);
-    typing = setTimeout(function () {
-      var v = $("q").value.trim();
-      if (v === query) return;
-      query = v;
-      open = {};
-      reload();
-    }, 250);
+    open = {};
+    if (now) reload(); else typing = setTimeout(reload, 250);
   });
   $("more").addEventListener("click", function () {
     if (nextOffset === null) return;
@@ -264,9 +260,6 @@ ${ROW_JS}
   function refreshStats() {
     return api("GET", "/api/shipments").then(function (j) { showStats(j.shipments); }).catch(function () {});
   }
-  // The board's find box can hand a search over: /history?q=acme
-  var handed = new URLSearchParams(location.search).get("q");
-  if (handed) { query = handed.trim().slice(0, 60); $("q").value = query; }
   reload();
   refreshStats();
 })();

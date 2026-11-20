@@ -10,6 +10,7 @@
 import { PAGE } from "./page.js";
 import { SETTINGS_PAGE } from "./page-settings.js";
 import { HISTORY_PAGE } from "./page-history.js";
+import { ADD_PAGE } from "./page-add.js";
 import { loadSettings, saveSettings, getMeta } from "./settings.js";
 import { runAlerts, composeEmail, sendEmail } from "./alerts.js";
 
@@ -73,6 +74,17 @@ function lockedOut() {
 
 // Small database changes are applied by the tool itself, once per start-up,
 // so a new version never depends on someone running a command by hand.
+// "Shipped" means the first time the carrier actually handled the parcel.
+// A label being printed does not count: that can happen days before pickup.
+const FIRST_SCAN_SQL = `(SELECT MIN(occurred_at) FROM events
+   WHERE shipment_id = ?
+     AND (milestone IS NULL OR milestone NOT IN ('info_received', 'pending'))
+     AND LOWER(COALESCE(status_text, '')) NOT LIKE '%created a label%'
+     AND LOWER(COALESCE(status_text, '')) NOT LIKE '%label created%'
+     AND LOWER(COALESCE(status_text, '')) NOT LIKE '%shipment information sent%')`;
+// Until there is a scan, fall back to the day it was added to the tool.
+const SHIP_DAY_SQL = "substr(COALESCE(shipped_at, created_at), 1, 10)";
+
 let schemaReady = false;
 async function ensureSchema(env) {
   if (schemaReady) return;
@@ -85,6 +97,13 @@ async function ensureSchema(env) {
   } catch (e) {
     // "duplicate column" means it is already there, which is the normal case.
   }
+  try {
+    await env.DB.prepare("ALTER TABLE shipments ADD COLUMN shipped_at TEXT").run();
+    // First run only: work out the ship date for everything already stored.
+    await env.DB.prepare(`UPDATE shipments SET shipped_at = ${FIRST_SCAN_SQL.replace("?", "shipments.id")}`).run();
+  } catch (e) {
+    // Already there.
+  }
   schemaReady = true;
 }
 
@@ -94,8 +113,9 @@ async function route(request, env, user) {
   const path = url.pathname;
   const method = request.method;
 
-  if (method === "GET" && (path === "/" || path === "/settings" || path === "/history")) {
-    return new Response(path === "/" ? PAGE : path === "/history" ? HISTORY_PAGE : SETTINGS_PAGE, {
+  const pages = { "/": PAGE, "/add": ADD_PAGE, "/history": HISTORY_PAGE, "/settings": SETTINGS_PAGE };
+  if (method === "GET" && pages[path]) {
+    return new Response(pages[path], {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
@@ -155,7 +175,7 @@ async function listShipments(env, user) {
   const customsHours = settings.customsHours;
   const shipments = results.map((row) => present(row, now, stallDays, customsHours));
   const quota = await quotaStatus(env, now);
-  return json({ shipments, quota, user: user.email, stallDays, now: now.toISOString() });
+  return json({ shipments, quota, user: user.email, stallDays, now: now.toISOString(), firstMonth: await firstMonth(env) });
 }
 
 // ---------------------------------------------------------------- history
@@ -165,6 +185,12 @@ async function listShipments(env, user) {
 
 const HISTORY_PAGE_SIZE = 50;
 const HISTORY_WHEN = "COALESCE(delivered_at, created_at)";
+
+// The earliest month anything shipped, so the "Shipped" list knows where to stop.
+async function firstMonth(env) {
+  const row = await env.DB.prepare(`SELECT MIN(${SHIP_DAY_SQL}) AS d FROM shipments`).first();
+  return row && row.d ? String(row.d).slice(0, 7) : "";
+}
 
 function historyFilter(url) {
   const q = (url.searchParams.get("q") || "").trim().slice(0, 60);
@@ -180,6 +206,22 @@ function historyFilter(url) {
       " AND (tracking_number LIKE ? ESCAPE '\\' OR label LIKE ? ESCAPE '\\' OR dest_country LIKE ? ESCAPE '\\'" +
       " OR courier LIKE ? ESCAPE '\\' OR last_event_location LIKE ? ESCAPE '\\')";
     binds.push(like, like, like, like, like);
+  }
+  const carrier = (url.searchParams.get("carrier") || "").toLowerCase();
+  if (carrier === "ups" || carrier === "fedex") {
+    where += " AND LOWER(COALESCE(courier, '')) LIKE ?";
+    binds.push(carrier + "%");
+  }
+  const isDay = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || "");
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  if (isDay(from)) {
+    where += ` AND ${SHIP_DAY_SQL} >= ?`;
+    binds.push(from);
+  }
+  if (isDay(to)) {
+    where += ` AND ${SHIP_DAY_SQL} <= ?`;
+    binds.push(to);
   }
   return { q, where, binds };
 }
@@ -222,7 +264,10 @@ async function listHistory(env, user, url) {
     months[m.month] = { delivered: m.delivered, judged: m.judged, ontime: m.ontime, removed: m.removed };
     total += m.delivered + m.removed;
   }
-  return json({ items, months, total, nextOffset: more ? offset + HISTORY_PAGE_SIZE : null, q: f.q, user: user.email });
+  return json({
+    items, months, total, nextOffset: more ? offset + HISTORY_PAGE_SIZE : null, q: f.q, user: user.email,
+    firstMonth: await firstMonth(env),
+  });
 }
 
 // The same list as a spreadsheet file. Follows the search box.
@@ -235,7 +280,7 @@ async function historyCsv(env, url) {
     .all();
   const day = (v) => (v ? String(v).slice(0, 10) : "");
   const lines = [
-    ["Tracking number", "Note", "Carrier", "Destination", "Added", "Delivered", "First estimate", "On time", "Days late", "Last scan", "Last scan place", "Removed from board"],
+    ["Tracking number", "Note", "Carrier", "Destination", "Added", "Shipped", "Delivered", "First estimate", "On time", "Days late", "Last scan", "Last scan place", "Removed from board"],
   ];
   for (const row of results) {
     const t = timing(row);
@@ -246,6 +291,7 @@ async function historyCsv(env, url) {
       (row.courier || "").toUpperCase(),
       row.dest_country || "",
       day(row.created_at),
+      day(row.shipped_at),
       day(row.delivered_at),
       t.due || "",
       t.status === "ontime" ? "Yes" : t.status === "late" ? "No" : "",
@@ -290,6 +336,8 @@ function present(row, now, stallDays, customsHours) {
     destCountry: row.dest_country || "",
     starred: !!row.starred,
     createdAt: row.created_at,
+    shipDay: String(row.shipped_at || row.created_at || "").slice(0, 10),
+    shipKnown: !!row.shipped_at,
     checkedAt: row.checked_at,
     deliveredAt: row.delivered_at,
     error: row.last_error || "",
@@ -731,6 +779,9 @@ async function storeTracking(env, shipmentId, tracking, nowIso) {
       )
     );
   }
+  statements.push(
+    env.DB.prepare(`UPDATE shipments SET shipped_at = ${FIRST_SCAN_SQL} WHERE id = ?`).bind(shipmentId, shipmentId)
+  );
   await env.DB.batch(statements);
 }
 

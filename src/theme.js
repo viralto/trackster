@@ -86,7 +86,8 @@ export const THEME_CSS = `
     .brand { padding: 18px 20px 14px; }
     .who, .navlabel, .stats, .side .foot { display: none; }
     .nav { display: flex; }
-    .nav a { flex: 1; justify-content: center; padding: 10px; border-right: 0; border-bottom: 4px solid transparent; font-size: 15px; }
+    .nav a { flex: 1; justify-content: center; padding: 10px 6px; border-right: 0; border-bottom: 4px solid transparent; font-size: 13.5px; gap: 8px; text-align: center; }
+    .nav a svg { display: none; }
     .nav a.on { border-bottom-color: var(--teal); }
     .main { padding: 14px 12px 60px; }
     .pagehead .tag { border-left: 0; padding: 0; }
@@ -154,17 +155,194 @@ export const ROW_JS = `
 
 `;
 
+// The filter bar at the top of the board and of History.
+export const FILTER_CSS = `
+  .filters { padding: 16px 26px; }
+  .frow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .frow[hidden] { display: none; }
+  .frow input[type=text] { flex: 1; min-width: 240px; padding: 10px 12px; }
+  .seg { display: inline-flex; border: 1px solid #dcdfe6; border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; border-left: 1px solid #dcdfe6; padding: 9px 16px; background: #fff; }
+  .seg button:first-child { border-left: 0; }
+  .seg button.on { background: var(--teal-deep); color: #fff; font-weight: 500; }
+  .frow label.when { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); white-space: nowrap; }
+  .frow select { padding: 9px 10px; }
+  .frow.range { margin-top: 12px; color: var(--ink); gap: 10px; }
+  .frow input[type=date] { font: inherit; color: var(--ink); border: 1px solid #dcdfe6; border-radius: 6px; padding: 7px 10px; }
+  .filters .meta { margin-top: 10px; color: var(--muted); font-size: 13.5px; }
+  .filters .meta button.link { margin: 0 6px; }
+`;
+
+export const FILTER_HTML = `
+  <section class="card section filters" aria-label="Find shipments">
+    <div class="frow">
+      <label class="sr" for="f-q">Search shipments</label>
+      <input type="text" id="f-q" autocomplete="off" spellcheck="false"
+        placeholder="Search customer, note, tracking number or place"
+        title="Searches the customer or note, tracking number, carrier and place. Two letters on their own, such as DE or US, find a country.">
+      <div class="seg" role="group" aria-label="Carrier" id="f-carrier">
+        <button type="button" data-c="" class="on" aria-pressed="true">All</button>
+        <button type="button" data-c="ups" aria-pressed="false">UPS</button>
+        <button type="button" data-c="fedex" aria-pressed="false">FedEx</button>
+      </div>
+      <label class="when" for="f-when">Shipped <select id="f-when"><option value="">Any time</option></select></label>
+    </div>
+    <div class="frow range" id="f-range" hidden>
+      <label for="f-from">From</label> <input type="date" id="f-from">
+      <label for="f-to">to</label> <input type="date" id="f-to">
+    </div>
+    <div class="meta" id="f-meta" role="status" hidden></div>
+  </section>`;
+
+// Shared filter logic. A page calls initFilters(onChange), then reads F,
+// filterRange(), filterMatches(shipment) or filterQuery() as it needs.
+export const FILTER_JS = `
+  var F = { q: "", carrier: "", when: "", from: "", to: "" };
+  var CARRIER_NAME = { ups: "UPS", fedex: "FedEx" };
+  function fEl(id) { return document.getElementById(id); }
+  function ymName(ym, withYear) {
+    var d = new Date(ym + "-15T12:00:00Z");
+    return isNaN(d) ? ym : d.toLocaleDateString("en-GB", withYear === false ? { month: "long", timeZone: "UTC" } : { month: "long", year: "numeric", timeZone: "UTC" });
+  }
+  function dayName(ymd) {
+    var d = new Date(ymd + "T12:00:00Z");
+    return isNaN(d) ? ymd : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  }
+  // The dates a "Shipped" choice stands for. A month is only a date range with a nicer name.
+  function filterRange() {
+    if (/^\\d{4}-\\d{2}$/.test(F.when)) return { from: F.when + "-01", to: F.when + "-31" };
+    if (F.when === "custom") {
+      var a = F.from, b = F.to;
+      if (a && b && a > b) { var x = a; a = b; b = x; }
+      return { from: a, to: b };
+    }
+    return { from: "", to: "" };
+  }
+  function filterOn() {
+    var r = filterRange();
+    return !!(F.q || F.carrier || r.from || r.to);
+  }
+  function filterText() {
+    var bits = [], r = filterRange();
+    if (F.carrier) bits.push(CARRIER_NAME[F.carrier]);
+    if (/^\\d{4}-\\d{2}$/.test(F.when)) bits.push("shipped " + ymName(F.when));
+    else if (r.from && r.to) bits.push("shipped " + dayName(r.from) + " to " + dayName(r.to));
+    else if (r.from) bits.push("shipped from " + dayName(r.from));
+    else if (r.to) bits.push("shipped up to " + dayName(r.to));
+    if (F.q) bits.push('matching "' + F.q + '"');
+    var s = bits.join(", ");
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  function filterQuery() {
+    var p = new URLSearchParams(), r = filterRange();
+    if (F.q) p.set("q", F.q);
+    if (F.carrier) p.set("carrier", F.carrier);
+    if (F.when) p.set("when", F.when);
+    if (r.from) p.set("from", r.from);
+    if (r.to) p.set("to", r.to);
+    return p.toString();
+  }
+  function filterMatches(s) {
+    var term = F.q.toLowerCase();
+    if (term) {
+      // Two letters on their own mean a country code. Otherwise "de" would also find every FedEx parcel.
+      if (/^[a-z]{2}$/.test(term)) { if (String(s.destCountry || "").toLowerCase() !== term) return false; }
+      else if ([s.label, s.trackingNumber, s.courier, s.destCountry, s.lastEventLocation].join(" ").toLowerCase().indexOf(term) === -1) return false;
+    }
+    if (F.carrier && String(s.courier || "").toLowerCase().indexOf(F.carrier) !== 0) return false;
+    var r = filterRange();
+    if (r.from && s.shipDay < r.from) return false;
+    if (r.to && s.shipDay > r.to) return false;
+    return true;
+  }
+  // Fills the "Shipped" list: this month, last month, then every earlier month back to the first shipment.
+  function setMonths(firstMonth) {
+    var sel = fEl("f-when");
+    var now = new Date();
+    var y = now.getUTCFullYear(), m = now.getUTCMonth();
+    var thisYm = now.toISOString().slice(0, 7);
+    var stop = firstMonth && firstMonth < thisYm ? firstMonth : thisYm;
+    if (/^\\d{4}-\\d{2}$/.test(F.when) && F.when < stop) stop = F.when;
+    sel.textContent = "";
+    function opt(v, label) { var o = document.createElement("option"); o.value = v; o.textContent = label; sel.appendChild(o); }
+    opt("", "Any time");
+    for (var i = 0; i < 60; i++) {
+      var ym = new Date(Date.UTC(y, m - i, 15)).toISOString().slice(0, 7);
+      if (ym < stop) break;
+      opt(ym, i === 0 ? "This month (" + ymName(ym, false) + ")" : i === 1 ? "Last month (" + ymName(ym, false) + ")" : ymName(ym));
+    }
+    opt("custom", "Custom range\\u2026");
+    sel.value = F.when;
+  }
+  function showFilterState() {
+    Array.prototype.forEach.call(fEl("f-carrier").children, function (b) {
+      var on = b.getAttribute("data-c") === F.carrier;
+      b.className = on ? "on" : "";
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    fEl("f-range").hidden = F.when !== "custom";
+  }
+  // Writes the line under the bar: what is being filtered, how many, and a way out.
+  function showFilterMeta(countText, extraNode) {
+    var box = fEl("f-meta");
+    box.textContent = "";
+    box.hidden = !filterOn();
+    if (!filterOn()) return;
+    box.appendChild(document.createTextNode(filterText() + ": " + countText + "."));
+    var clear = document.createElement("button");
+    clear.className = "link"; clear.type = "button"; clear.textContent = "Clear";
+    clear.addEventListener("click", function () {
+      F = { q: "", carrier: "", when: "", from: "", to: "" };
+      fEl("f-q").value = ""; fEl("f-from").value = ""; fEl("f-to").value = ""; fEl("f-when").value = "";
+      showFilterState();
+      filterChanged(true);
+    });
+    box.appendChild(clear);
+    if (extraNode) box.appendChild(extraNode);
+  }
+  var filterChanged = function () {};
+  function initFilters(onChange) {
+    filterChanged = onChange;
+    // Another page can hand its filters over in the address.
+    var p = new URLSearchParams(location.search);
+    F.q = (p.get("q") || "").trim().slice(0, 60);
+    F.carrier = p.get("carrier") === "ups" || p.get("carrier") === "fedex" ? p.get("carrier") : "";
+    var w = p.get("when") || "";
+    F.when = /^\\d{4}-\\d{2}$/.test(w) || w === "custom" ? w : "";
+    if (F.when === "custom") { F.from = p.get("from") || ""; F.to = p.get("to") || ""; }
+    fEl("f-q").value = F.q; fEl("f-from").value = F.from; fEl("f-to").value = F.to;
+    setMonths("");
+    showFilterState();
+    fEl("f-q").addEventListener("input", function () { F.q = fEl("f-q").value.trim(); onChange(false); });
+    fEl("f-carrier").addEventListener("click", function (ev) {
+      var b = ev.target.closest("button");
+      if (!b) return;
+      F.carrier = b.getAttribute("data-c");
+      showFilterState(); onChange(true);
+    });
+    fEl("f-when").addEventListener("change", function () {
+      F.when = fEl("f-when").value;
+      showFilterState(); onChange(true);
+      if (F.when === "custom") fEl("f-from").focus();
+    });
+    fEl("f-from").addEventListener("change", function () { F.from = fEl("f-from").value; onChange(true); });
+    fEl("f-to").addEventListener("change", function () { F.to = fEl("f-to").value; onChange(true); });
+  }
+`;
+
+const ICON_PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>';
 const ICON_CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
 const ICON_BOX = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9M7.5 5.2l9 4.6"/></svg>';
 const ICON_BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0M12 3V2"/></svg>';
 
-// The left-hand column. active is "board", "history" or "settings".
+// The left-hand column. active is "add", "board", "history" or "settings".
 export function sidebar(active) {
   return `<aside class="side">
     <div class="brand"><div class="name">Shipments</div><div class="sub">UPS and FedEx tracking</div></div>
     <div class="who"><div class="avatar" id="avatar"></div><div><div class="n" id="userName">&nbsp;</div><div class="o">Dot Origin</div></div></div>
     <div class="navlabel">Menu</div>
     <nav class="nav" aria-label="Main">
+      <a href="/add"${active === "add" ? ' class="on" aria-current="page"' : ""}>${ICON_PLUS}<span>Add shipments</span></a>
       <a href="/"${active === "board" ? ' class="on" aria-current="page"' : ""}>${ICON_BOX}<span>Shipments</span></a>
       <a href="/history"${active === "history" ? ' class="on" aria-current="page"' : ""}>${ICON_CLOCK}<span>History</span></a>
       <a href="/settings"${active === "settings" ? ' class="on" aria-current="page"' : ""}>${ICON_BELL}<span>Alert settings</span></a>
