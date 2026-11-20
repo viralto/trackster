@@ -1,7 +1,7 @@
 // The board. One page, no build step. Kept in its own file so the engine
 // (index.js) can later serve a different screen without being touched.
 
-import { THEME_HEAD, THEME_CSS, ROW_CSS, ROW_JS, FILTER_CSS, FILTER_HTML, FILTER_JS, WHO_JS, sidebar } from "./theme.js";
+import { THEME_HEAD, THEME_CSS, ROW_CSS, ROW_JS, FILTER_CSS, filterHtml, SORT_BUTTON, FILTER_JS, WHO_JS, sidebar } from "./theme.js";
 
 export const PAGE = `<!doctype html>
 <html lang="en-GB">
@@ -28,6 +28,7 @@ ${FILTER_CSS}
   .grouphead button { margin-left: auto; }
   .grouphead .headlinks { margin-left: auto; display: flex; gap: 18px; align-items: center; }
   .grouphead .headlinks button { margin-left: 0; }
+  .grouphead .sortbtn { padding: 5px 11px; font-size: 13.5px; }
   .grouphead .headlinks a { font-size: 14.5px; text-decoration: none; }
 ${ROW_CSS}
   .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -48,7 +49,7 @@ ${sidebar("board")}
 <main class="main">
   <h1 class="sr">Shipments</h1>
 
-${FILTER_HTML}
+${filterHtml()}
   <div class="notice err" id="boardNotice" role="status"></div>
 
   <section class="card group" id="sec-open">
@@ -59,7 +60,7 @@ ${FILTER_HTML}
 
   <section class="card group" id="sec-done">
     <div class="grouphead">Delivered, last 14 days <span class="count" id="c-done">0</span>
-      <span class="headlinks"><a href="/history">All history</a><button class="link" id="toggleDone">Show</button></span></div>
+      <span class="headlinks">${SORT_BUTTON}<a href="/history">All history</a><button class="link" id="toggleDone">Show</button></span></div>
     <div id="g-done" hidden></div>
   </section>
 </main>
@@ -174,10 +175,15 @@ ${FILTER_JS}
     Object.keys(groups).forEach(function (g) {
       groups[g].sort(function (a, b) {
         if (a.starred !== b.starred) return a.starred ? -1 : 1;
-        // Plain date order. Open shipments go by the day they shipped, delivered ones by the day they arrived.
-        var ka = g === "done" ? String(a.deliveredAt || "") : a.shipDay + " " + a.createdAt;
-        var kb = g === "done" ? String(b.deliveredAt || "") : b.shipDay + " " + b.createdAt;
-        return F.sort === "old" ? ka.localeCompare(kb) : kb.localeCompare(ka);
+        if (g === "done") {
+          // Delivered shipments follow the newest/oldest button, by the day they arrived.
+          var ka = String(a.deliveredAt || ""), kb = String(b.deliveredAt || "");
+          return F.sort === "old" ? ka.localeCompare(kb) : kb.localeCompare(ka);
+        }
+        // Open shipments: the ones needing attention first, then longest without a scan.
+        var oa = (STATE[a.state] || STATE.transit).order, ob = (STATE[b.state] || STATE.transit).order;
+        if (oa !== ob) return oa - ob;
+        return String(a.lastEventAt || a.createdAt).localeCompare(String(b.lastEventAt || b.createdAt));
       });
       var box = $("g-" + g);
       box.textContent = "";
@@ -355,7 +361,7 @@ ${ROW_JS}
     return d;
   }
 
-  initFilters(function () { if (data) render(); }, "board");
+  initFilters(function () { if (data) render(); });
 
   $("toggleDone").addEventListener("click", function () {
     doneTouched = true;

@@ -1,7 +1,7 @@
 // History: every shipment that has been delivered or removed, newest first.
 // Reads /api/history a page at a time; the search box is answered by the engine.
 
-import { THEME_HEAD, THEME_CSS, ROW_CSS, ROW_JS, FILTER_CSS, FILTER_HTML, FILTER_JS, WHO_JS, sidebar } from "./theme.js";
+import { THEME_HEAD, THEME_CSS, ROW_CSS, ROW_JS, FILTER_CSS, filterHtml, FILTER_JS, WHO_JS, sidebar } from "./theme.js";
 
 export const HISTORY_PAGE = `<!doctype html>
 <html lang="en-GB">
@@ -40,7 +40,7 @@ ${sidebar("history")}
 <main class="main">
   <h1 class="sr">Shipment history</h1>
 
-${FILTER_HTML}
+${filterHtml({ sort: true })}
   <div class="tools-row">
     <span class="meta" id="meta" role="status">&nbsp;</span>
     <a class="dl" id="dl" href="/api/history.csv">Download as spreadsheet</a>
@@ -250,7 +250,7 @@ ${ROW_JS}
     clearTimeout(typing);
     open = {};
     if (now) reload(); else typing = setTimeout(reload, 250);
-  }, "history");
+  });
   $("more").addEventListener("click", function () {
     if (nextOffset === null) return;
     $("more").disabled = true;

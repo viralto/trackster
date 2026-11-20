@@ -177,7 +177,13 @@ export const FILTER_CSS = `
   .filters .meta button.link { margin: 0 6px; }
 `;
 
-export const FILTER_HTML = `
+// The newest/oldest toggle. It orders delivered shipments only, so each page puts it beside its delivered list.
+export const SORT_BUTTON = `      <button type="button" class="sortbtn" id="f-sort">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M4 12h6M4 17h3"/><path id="f-sort-arrow" d="M18 6v12M14.5 14.5 18 18l3.5-3.5"/></svg>
+        <span id="f-sort-text">Newest first</span>
+      </button>`;
+
+export const filterHtml = (opts) => `
   <section class="card section filters" aria-label="Find shipments">
     <div class="frow">
       <label class="sr" for="f-q">Search shipments</label>
@@ -191,10 +197,7 @@ export const FILTER_HTML = `
         <button type="button" data-c="fedex" aria-pressed="false">FedEx</button>
       </div>
       <label class="when" for="f-when">Shipped <select id="f-when"><option value="">Any time</option></select></label>
-      <button type="button" class="sortbtn" id="f-sort">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M4 12h6M4 17h3"/><path id="f-sort-arrow" d="M18 6v12M14.5 14.5 18 18l3.5-3.5"/></svg>
-        <span id="f-sort-text">Newest first</span>
-      </button>
+${opts && opts.sort ? SORT_BUTTON : ""}
       </div>
     </div>
     <div class="frow range" id="f-range" hidden>
@@ -314,6 +317,7 @@ export const FILTER_JS = `
   // The order button flips between newest first and oldest first.
   // The choice is remembered in this browser, separately for each page.
   function showSort() {
+    if (!fEl("f-sort")) return;
     var old = F.sort === "old";
     fEl("f-sort-text").textContent = old ? "Oldest first" : "Newest first";
     // Arrow points down for newest at the top, up for oldest at the top.
@@ -321,13 +325,14 @@ export const FILTER_JS = `
     fEl("f-sort").title = old ? "Showing oldest first. Click for newest first." : "Showing newest first. Click for oldest first.";
     fEl("f-sort").setAttribute("aria-label", "Order: " + (old ? "oldest first" : "newest first") + ". Click to reverse.");
   }
-  function initFilters(onChange, sortKey) {
+  function initFilters(onChange) {
+    var sortKey = "delivered"; // one choice for delivered lists, wherever they appear
     filterChanged = onChange;
     var saved = "";
     try { saved = localStorage.getItem("dl-order-" + sortKey) || ""; } catch (e) {}
     F.sort = saved === "old" ? "old" : "new";
     showSort();
-    fEl("f-sort").addEventListener("click", function () {
+    if (fEl("f-sort")) fEl("f-sort").addEventListener("click", function () {
       F.sort = F.sort === "old" ? "new" : "old";
       try { localStorage.setItem("dl-order-" + sortKey, F.sort); } catch (e) {}
       showSort();
