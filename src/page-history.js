@@ -250,7 +250,7 @@ ${ROW_JS}
     clearTimeout(typing);
     open = {};
     if (now) reload(); else typing = setTimeout(reload, 250);
-  }, "history", [["new", "Newest first"], ["old", "Oldest first"]]);
+  }, "history");
   $("more").addEventListener("click", function () {
     if (nextOffset === null) return;
     $("more").disabled = true;

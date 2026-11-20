@@ -169,6 +169,8 @@ export const FILTER_CSS = `
   .seg button.on { background: var(--teal-deep); color: #fff; font-weight: 500; }
   .frow label.when { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); white-space: nowrap; }
   .frow select { padding: 9px 10px; }
+  .sortbtn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; color: var(--ink); white-space: nowrap; }
+  .sortbtn svg { width: 20px; height: 20px; stroke: var(--teal-deep); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   .frow.range { margin-top: 12px; color: var(--ink); gap: 10px; }
   .frow input[type=date] { font: inherit; color: var(--ink); border: 1px solid #dcdfe6; border-radius: 6px; padding: 7px 10px; }
   .filters .meta { margin-top: 10px; color: var(--muted); font-size: 13.5px; }
@@ -189,7 +191,10 @@ export const FILTER_HTML = `
         <button type="button" data-c="fedex" aria-pressed="false">FedEx</button>
       </div>
       <label class="when" for="f-when">Shipped <select id="f-when"><option value="">Any time</option></select></label>
-      <label class="when" for="f-sort">Order <select id="f-sort"></select></label>
+      <button type="button" class="sortbtn" id="f-sort">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M4 12h6M4 17h3"/><path id="f-sort-arrow" d="M18 6v12M14.5 14.5 18 18l3.5-3.5"/></svg>
+        <span id="f-sort-text">Newest first</span>
+      </button>
       </div>
     </div>
     <div class="frow range" id="f-range" hidden>
@@ -306,21 +311,26 @@ export const FILTER_JS = `
     if (extraNode) box.appendChild(extraNode);
   }
   var filterChanged = function () {};
-  // sorts is the list of orders this page offers, first one being its default.
+  // The order button flips between newest first and oldest first.
   // The choice is remembered in this browser, separately for each page.
-  function initFilters(onChange, sortKey, sorts) {
+  function showSort() {
+    var old = F.sort === "old";
+    fEl("f-sort-text").textContent = old ? "Oldest first" : "Newest first";
+    // Arrow points down for newest at the top, up for oldest at the top.
+    fEl("f-sort-arrow").setAttribute("d", old ? "M18 18V6M14.5 9.5 18 6l3.5 3.5" : "M18 6v12M14.5 14.5 18 18l3.5-3.5");
+    fEl("f-sort").title = old ? "Showing oldest first. Click for newest first." : "Showing newest first. Click for oldest first.";
+    fEl("f-sort").setAttribute("aria-label", "Order: " + (old ? "oldest first" : "newest first") + ". Click to reverse.");
+  }
+  function initFilters(onChange, sortKey) {
     filterChanged = onChange;
-    var sortSel = fEl("f-sort");
-    sorts.forEach(function (o) {
-      var op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; sortSel.appendChild(op);
-    });
     var saved = "";
     try { saved = localStorage.getItem("dl-order-" + sortKey) || ""; } catch (e) {}
-    F.sort = sorts.some(function (o) { return o[0] === saved; }) ? saved : sorts[0][0];
-    sortSel.value = F.sort;
-    sortSel.addEventListener("change", function () {
-      F.sort = sortSel.value;
+    F.sort = saved === "old" ? "old" : "new";
+    showSort();
+    fEl("f-sort").addEventListener("click", function () {
+      F.sort = F.sort === "old" ? "new" : "old";
       try { localStorage.setItem("dl-order-" + sortKey, F.sort); } catch (e) {}
+      showSort();
       onChange(true);
     });
     // Another page can hand its filters over in the address.
