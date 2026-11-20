@@ -23,6 +23,14 @@ ${THEME_CSS}
   .notice ul { margin: 4px 0 0; padding-left: 18px; }
   .notice .after { margin: 12px 0 0; color: var(--muted); }
   .err { color: var(--red-ink); }
+  .preview { margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--row-alt); }
+  .phead { color: var(--ink); font-weight: 500; margin-bottom: 8px; }
+  .ptable { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  .ptable th { text-align: left; font-weight: 400; color: var(--muted); padding: 4px 14px 4px 0; border-bottom: 1px solid var(--line); }
+  .ptable td { padding: 5px 14px 5px 0; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: top; }
+  .ptable tr:last-child td { border-bottom: 0; }
+  .ptable .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; white-space: nowrap; }
+  .ptable tr.odd td { color: var(--amber-ink); }
 </style>
 </head>
 <body>
@@ -33,9 +41,11 @@ ${sidebar("add")}
 
   <section class="card section add" aria-label="Add shipments">
     <label for="paste">Add shipments</label>
-    <p class="hint">One tracking number per line, up to 20 at a time. Add the customer or a note after a comma if you like,
-      for example: 1Z999AA10123456784, Acme order 4471</p>
+    <p class="hint">Paste tracking numbers however they come: one per line, or several separated by commas.
+      Add the customer or a note after a number if you like, for example: 1Z999AA10123456784, Acme order 4471.
+      The list underneath shows how it will be read before anything is added.</p>
     <textarea id="paste" spellcheck="false" autocomplete="off" autofocus></textarea>
+    <div id="preview" class="preview" aria-live="polite" hidden></div>
     <div class="row-actions">
       <button class="primary" id="addBtn">Add to tracker</button>
       <span class="meta" id="quota"></span>
@@ -95,69 +105,127 @@ ${WHO_JS}
 
   function norm(tn) { return String(tn || "").replace(/\\s+/g, "").toUpperCase(); }
 
-  function submit(items) {
+  function showReport(report, items) {
     var notice = $("addNotice");
-    var btn = $("addBtn");
     var labels = {};
     items.forEach(function (x) { labels[norm(x.trackingNumber)] = x.label || ""; });
+    var ul = el("ul");
+    var allGood = true;
+    report.forEach(function (r) {
+      if (r.result !== "added") allGood = false;
+      var li = el("li", null, r.trackingNumber + ": " + (RESULT_TEXT[r.result] || r.result) +
+        (r.detail ? ". " + r.detail : ""));
+      if (r.result === "suspect") {
+        var force = el("button", "small", "Add it anyway");
+        force.style.marginLeft = "8px";
+        force.title = "Adds it without checking that the number is the right shape";
+        force.addEventListener("click", function () {
+          force.disabled = true;
+          api("POST", "/api/shipments", { items: [{ trackingNumber: r.trackingNumber, label: labels[r.trackingNumber] || "", force: true }] })
+            .then(function (j) {
+              var res = j.report[0] || {};
+              li.textContent = r.trackingNumber + ": " + (RESULT_TEXT[res.result] || res.result || "not added");
+              return load();
+            }).catch(function (e) { force.disabled = false; li.appendChild(el("span", "err", " " + e.message)); });
+        });
+        li.appendChild(force);
+      }
+      ul.appendChild(li);
+    });
+    notice.appendChild(ul);
+    var added = report.filter(function (r) { return r.result === "added" || r.result === "restored"; }).length;
+    if (added) {
+      var go = el("p", "after");
+      var a = el("a", null, added === 1 ? "See it on the board" : "See them on the board");
+      a.href = "/";
+      go.appendChild(a);
+      go.appendChild(document.createTextNode('. New shipments say "Looking it up" for a minute or two while the carrier answers.'));
+      notice.appendChild(go);
+    }
+    if (allGood) { $("paste").value = ""; parsed = []; showPreview(); }
+  }
+  // What the engine makes of the box, refreshed as you type. The same list is what gets added.
+  var parsed = [];
+  var parseTimer = null, parseAsk = 0;
+  function readBox() {
+    var text = $("paste").value;
+    var mine = ++parseAsk;
+    if (!text.trim()) { parsed = []; showPreview(); return Promise.resolve(); }
+    return api("POST", "/api/parse", { text: text }).then(function (j) {
+      if (mine !== parseAsk) return;
+      parsed = j.items;
+      showPreview();
+    }).catch(function () {});
+  }
+  function showPreview() {
+    var box = $("preview");
+    box.textContent = "";
+    box.hidden = !parsed.length;
+    if (!parsed.length) return;
+    var good = parsed.filter(function (x) { return x.ok; }).length;
+    var odd = parsed.length - good;
+    var head = el("div", "phead", (parsed.length === 1 ? "1 shipment" : parsed.length + " shipments") + " found" +
+      (odd ? ". " + odd + (odd === 1 ? " does" : " do") + " not look right and will be held back for you to check" : "") + ".");
+    box.appendChild(head);
+    var table = el("table", "ptable");
+    var hr = el("tr");
+    ["Carrier", "Tracking number", "Customer or note"].forEach(function (h) { hr.appendChild(el("th", null, h)); });
+    table.appendChild(hr);
+    parsed.forEach(function (x) {
+      var tr = el("tr", x.ok ? null : "odd");
+      tr.appendChild(el("td", null, x.ok ? (x.carrier === "ups" ? "UPS" : "FedEx") : "?"));
+      tr.appendChild(el("td", "mono", x.trackingNumber));
+      tr.appendChild(el("td", x.ok ? null : "why", x.ok ? (x.label || "") : x.why + (x.label ? " Note: " + x.label : "")));
+      table.appendChild(tr);
+    });
+    box.appendChild(table);
+  }
+  $("paste").addEventListener("input", function () {
+    clearTimeout(parseTimer);
+    parseTimer = setTimeout(readBox, 250);
+  });
+
+  // Sent in small batches so a long list never trips the engine's per-request limits.
+  var BATCH = 10;
+  function submitAll(items) {
+    var notice = $("addNotice");
+    var btn = $("addBtn");
+    var report = [];
+    var chain = Promise.resolve();
     notice.textContent = "";
     notice.className = "notice";
     btn.disabled = true;
-    btn.textContent = "Adding";
-    return api("POST", "/api/shipments", { items: items }).then(function (j) {
-      var ul = el("ul");
-      var allGood = true;
-      j.report.forEach(function (r) {
-        if (r.result !== "added") allGood = false;
-        var li = el("li", null, r.trackingNumber + ": " + (RESULT_TEXT[r.result] || r.result) +
-          (r.detail ? ". " + r.detail : ""));
-        if (r.result === "suspect") {
-          var force = el("button", "small", "Add it anyway");
-          force.style.marginLeft = "8px";
-          force.title = "Adds it without checking that the number is the right shape";
-          force.addEventListener("click", function () {
-            submit([{ trackingNumber: r.trackingNumber, label: labels[r.trackingNumber] || "", force: true }]);
-          });
-          li.appendChild(force);
-        }
-        ul.appendChild(li);
-      });
-      notice.appendChild(ul);
-      var added = j.report.filter(function (r) { return r.result === "added" || r.result === "restored"; }).length;
-      if (added) {
-        var go = el("p", "after");
-        var a = el("a", null, added === 1 ? "See it on the board" : "See them on the board");
-        a.href = "/";
-        go.appendChild(a);
-        go.appendChild(document.createTextNode('. New shipments say "Looking it up" for a minute or two while the carrier answers.'));
-        notice.appendChild(go);
-      }
-      if (allGood) $("paste").value = "";
-      return load();
+    for (var i = 0; i < items.length; i += BATCH) {
+      (function (chunk, upTo) {
+        chain = chain.then(function () {
+          btn.textContent = "Adding " + Math.min(upTo, items.length) + " of " + items.length;
+          return api("POST", "/api/shipments", { items: chunk }).then(function (j) { report = report.concat(j.report); });
+        });
+      })(items.slice(i, i + BATCH), i + BATCH);
+    }
+    return chain.then(function () {
+      showReport(report, items);
     }).catch(function (e) {
-      notice.className = "notice err";
-      notice.textContent = e.message;
+      if (report.length) showReport(report, items);
+      var p = el("p", "err", (report.length ? "Stopped part way: " : "") + e.message);
+      notice.appendChild(p);
     }).then(function () {
       btn.textContent = "Add to tracker";
-      btn.disabled = data ? data.quota.used >= data.quota.limit : false;
+      return load();
     });
   }
 
   $("addBtn").addEventListener("click", function () {
-    var items = $("paste").value.split(/\\r?\\n/).map(function (line) {
-      var i = line.indexOf(",");
-      var tn = (i === -1 ? line : line.slice(0, i)).trim();
-      var label = i === -1 ? "" : line.slice(i + 1).trim();
-      return { trackingNumber: tn, label: label };
-    }).filter(function (x) { return x.trackingNumber; });
-    if (!items.length) {
-      $("addNotice").className = "notice";
-      $("addNotice").textContent = "Paste at least one tracking number.";
-      return;
-    }
-    submit(items);
+    clearTimeout(parseTimer);
+    readBox().then(function () {
+      if (!parsed.length) {
+        $("addNotice").className = "notice";
+        $("addNotice").textContent = "Paste at least one tracking number.";
+        return;
+      }
+      submitAll(parsed.map(function (x) { return { trackingNumber: x.trackingNumber, label: x.label }; }));
+    });
   });
-
 
   load();
 })();

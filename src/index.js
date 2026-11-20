@@ -142,6 +142,7 @@ async function route(request, env, user) {
   if (method === "POST" && path === "/api/settings") return postSettings(request, env, user);
   if (method === "POST" && path === "/api/settings/test") return testEmail(env, user);
   if (method === "POST" && path === "/api/shipments") return addShipments(request, env, user);
+  if (method === "POST" && path === "/api/parse") return parseRoute(request);
 
   const m = path.match(/^\/api\/shipments\/(\d+)(?:\/(events|star|refresh|label|remove|restore))?$/);
   if (m) {
@@ -566,6 +567,84 @@ export function carrierFormat(tn) {
   }
   if (/^\d{15}$/.test(tn) || /^\d{20}$/.test(tn) || /^\d{22}$/.test(tn)) return { ok: true, carrier: "fedex" };
   return { ok: false, why: "It does not look like a UPS or FedEx tracking number." };
+}
+
+// Turns whatever was pasted into a list of shipments. People paste one per
+// line, several on a line with commas, or a spreadsheet row with tabs, so the
+// rule is: anything that is a valid UPS or FedEx number is its own shipment,
+// and any other text is the note for the number it sits beside.
+export function parsePaste(text) {
+  const items = [];
+  const seen = new Set();
+  const push = (tn, shape) => {
+    if (seen.has(tn)) return null;
+    seen.add(tn);
+    const item = { trackingNumber: tn, label: "", ok: shape.ok, carrier: shape.carrier || "", why: shape.ok ? "" : shape.why };
+    items.push(item);
+    return item;
+  };
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const tokens = line.split(/[,;\t]+/).map((t) => t.trim()).filter(Boolean);
+    if (!tokens.length) continue;
+    // Each token becomes numbers, or stays as text.
+    const parts = [];
+    for (const tok of tokens) {
+      const joined = cleanTrackingNumber(tok);
+      // A number with a typo still counts as a number, so it is flagged and not
+      // swallowed as the note of the one before it.
+      if (joined && (carrierFormat(joined).ok || /^1Z[A-Z0-9]{16}$/.test(joined) || /^\d{12}$/.test(joined))) {
+        parts.push({ numbers: [joined] });
+        continue;
+      }
+      // Several numbers separated only by spaces.
+      const pieces = tok.split(/\s+/).map(cleanTrackingNumber);
+      if (pieces.length > 1 && pieces.every((p) => p && carrierFormat(p).ok)) parts.push({ numbers: pieces });
+      else parts.push({ text: tok });
+    }
+    if (!parts.some((p) => p.numbers)) {
+      // Nothing recognisable: keep the old reading, first piece is the number, so
+      // an unusual number can still be added on purpose.
+      // A row of things that all look like codes (no spaces, some digits, a
+      // decent length) is a list of numbers in a format we do not know.
+      const codey = (t) => /^[A-Za-z0-9_-]{8,50}$/.test(t) && /\d/.test(t);
+      if (tokens.length > 1 && tokens.every(codey)) {
+        for (const t of tokens) {
+          const each = cleanTrackingNumber(t);
+          if (each) push(each, carrierFormat(each));
+        }
+        continue;
+      }
+      const tn = cleanTrackingNumber(tokens[0]);
+      if (!tn) continue;
+      const item = push(tn, carrierFormat(tn));
+      if (item) item.label = tokens.slice(1).join(", ").slice(0, 120);
+      continue;
+    }
+    let current = null;
+    let waiting = []; // text that came before the first number on the line
+    for (const p of parts) {
+      if (p.numbers) {
+        for (const tn of p.numbers) {
+          current = push(tn, carrierFormat(tn)) || { label: "" }; // a repeat still soaks up its own note
+          if (waiting.length) {
+            current.label = waiting.join(", ");
+            waiting = [];
+          }
+        }
+      } else if (current) {
+        current.label = (current.label ? current.label + ", " : "") + p.text;
+      } else {
+        waiting.push(p.text);
+      }
+    }
+  }
+  for (const it of items) it.label = it.label.slice(0, 120);
+  return items;
+}
+
+async function parseRoute(request) {
+  const body = await request.json().catch(() => ({}));
+  return json({ items: parsePaste(String((body && body.text) || "").slice(0, 20000)) });
 }
 
 function cleanTrackingNumber(v) {
