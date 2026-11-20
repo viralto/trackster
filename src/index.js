@@ -224,7 +224,9 @@ function historyFilter(url) {
     where += ` AND ${SHIP_DAY_SQL} <= ?`;
     binds.push(to);
   }
-  return { q, where, binds };
+  // Oldest first or newest first, by the day it was delivered (or added, for removed ones).
+  const dir = url.searchParams.get("sort") === "old" ? "ASC" : "DESC";
+  return { q, where, binds, order: `${HISTORY_WHEN} ${dir}, id ${dir}` };
 }
 
 async function listHistory(env, user, url) {
@@ -234,7 +236,7 @@ async function listHistory(env, user, url) {
   const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10) || 0);
 
   const { results } = await env.DB.prepare(
-    `SELECT * FROM shipments WHERE ${f.where} ORDER BY ${HISTORY_WHEN} DESC, id DESC LIMIT ? OFFSET ?`
+    `SELECT * FROM shipments WHERE ${f.where} ORDER BY ${f.order} LIMIT ? OFFSET ?`
   )
     .bind(...f.binds, HISTORY_PAGE_SIZE + 1, offset)
     .all();
@@ -275,7 +277,7 @@ async function listHistory(env, user, url) {
 async function historyCsv(env, url) {
   const f = historyFilter(url);
   const { results } = await env.DB.prepare(
-    `SELECT * FROM shipments WHERE ${f.where} ORDER BY ${HISTORY_WHEN} DESC, id DESC LIMIT 20000`
+    `SELECT * FROM shipments WHERE ${f.where} ORDER BY ${f.order} LIMIT 20000`
   )
     .bind(...f.binds)
     .all();

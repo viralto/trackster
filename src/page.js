@@ -174,6 +174,12 @@ ${FILTER_JS}
     Object.keys(groups).forEach(function (g) {
       groups[g].sort(function (a, b) {
         if (a.starred !== b.starred) return a.starred ? -1 : 1;
+        if (F.sort === "new" || F.sort === "old") {
+          // Open shipments go by the day they shipped, delivered ones by the day they arrived.
+          var ka = g === "done" ? String(a.deliveredAt || "") : a.shipDay + " " + a.createdAt;
+          var kb = g === "done" ? String(b.deliveredAt || "") : b.shipDay + " " + b.createdAt;
+          return F.sort === "old" ? ka.localeCompare(kb) : kb.localeCompare(ka);
+        }
         var oa = (STATE[a.state] || STATE.transit).order, ob = (STATE[b.state] || STATE.transit).order;
         if (oa !== ob) return oa - ob;
         return String(a.lastEventAt || a.createdAt).localeCompare(String(b.lastEventAt || b.createdAt));
@@ -354,7 +360,8 @@ ${ROW_JS}
     return d;
   }
 
-  initFilters(function () { if (data) render(); });
+  initFilters(function () { if (data) render(); }, "board",
+    [["attention", "Needs attention first"], ["new", "Newest first"], ["old", "Oldest first"]]);
 
   $("toggleDone").addEventListener("click", function () {
     doneTouched = true;

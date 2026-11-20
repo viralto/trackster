@@ -160,7 +160,9 @@ export const FILTER_CSS = `
   .filters { padding: 16px 26px; }
   .frow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   .frow[hidden] { display: none; }
-  .frow input[type=text] { flex: 1; min-width: 240px; padding: 10px 12px; }
+  .frow input[type=text] { flex: 1 1 220px; min-width: 200px; padding: 10px 12px; }
+  /* Carrier, Shipped and Order travel together: if there is no room beside the search box they drop to a row of their own. */
+  .fctl { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   .seg { display: inline-flex; border: 1px solid #dcdfe6; border-radius: 6px; overflow: hidden; }
   .seg button { border: 0; border-radius: 0; border-left: 1px solid #dcdfe6; padding: 9px 16px; background: #fff; }
   .seg button:first-child { border-left: 0; }
@@ -180,12 +182,15 @@ export const FILTER_HTML = `
       <input type="text" id="f-q" autocomplete="off" spellcheck="false"
         placeholder="Search customer, note, tracking number or place"
         title="Searches the customer or note, tracking number, carrier and place. Two letters on their own, such as DE or US, find a country.">
+      <div class="fctl">
       <div class="seg" role="group" aria-label="Carrier" id="f-carrier">
         <button type="button" data-c="" class="on" aria-pressed="true">All</button>
         <button type="button" data-c="ups" aria-pressed="false">UPS</button>
         <button type="button" data-c="fedex" aria-pressed="false">FedEx</button>
       </div>
       <label class="when" for="f-when">Shipped <select id="f-when"><option value="">Any time</option></select></label>
+      <label class="when" for="f-sort">Order <select id="f-sort"></select></label>
+      </div>
     </div>
     <div class="frow range" id="f-range" hidden>
       <label for="f-from">From</label> <input type="date" id="f-from">
@@ -197,7 +202,7 @@ export const FILTER_HTML = `
 // Shared filter logic. A page calls initFilters(onChange), then reads F,
 // filterRange(), filterMatches(shipment) or filterQuery() as it needs.
 export const FILTER_JS = `
-  var F = { q: "", carrier: "", when: "", from: "", to: "" };
+  var F = { q: "", carrier: "", when: "", from: "", to: "", sort: "" };
   var CARRIER_NAME = { ups: "UPS", fedex: "FedEx" };
   function fEl(id) { return document.getElementById(id); }
   function ymName(ym, withYear) {
@@ -292,7 +297,7 @@ export const FILTER_JS = `
     var clear = document.createElement("button");
     clear.className = "link"; clear.type = "button"; clear.textContent = "Clear";
     clear.addEventListener("click", function () {
-      F = { q: "", carrier: "", when: "", from: "", to: "" };
+      F = { q: "", carrier: "", when: "", from: "", to: "", sort: F.sort }; // the order is a view choice, so Clear leaves it
       fEl("f-q").value = ""; fEl("f-from").value = ""; fEl("f-to").value = ""; fEl("f-when").value = "";
       showFilterState();
       filterChanged(true);
@@ -301,8 +306,23 @@ export const FILTER_JS = `
     if (extraNode) box.appendChild(extraNode);
   }
   var filterChanged = function () {};
-  function initFilters(onChange) {
+  // sorts is the list of orders this page offers, first one being its default.
+  // The choice is remembered in this browser, separately for each page.
+  function initFilters(onChange, sortKey, sorts) {
     filterChanged = onChange;
+    var sortSel = fEl("f-sort");
+    sorts.forEach(function (o) {
+      var op = document.createElement("option"); op.value = o[0]; op.textContent = o[1]; sortSel.appendChild(op);
+    });
+    var saved = "";
+    try { saved = localStorage.getItem("dl-order-" + sortKey) || ""; } catch (e) {}
+    F.sort = sorts.some(function (o) { return o[0] === saved; }) ? saved : sorts[0][0];
+    sortSel.value = F.sort;
+    sortSel.addEventListener("change", function () {
+      F.sort = sortSel.value;
+      try { localStorage.setItem("dl-order-" + sortKey, F.sort); } catch (e) {}
+      onChange(true);
+    });
     // Another page can hand its filters over in the address.
     var p = new URLSearchParams(location.search);
     F.q = (p.get("q") || "").trim().slice(0, 60);

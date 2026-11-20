@@ -104,7 +104,7 @@ ${ROW_JS}
     var mine = ++asked;
     var fq = filterQuery();
     var narrowed = filterOn();
-    var path = "/api/history?offset=" + offset + (fq ? "&" + fq : "");
+    var path = "/api/history?offset=" + offset + "&sort=" + F.sort + (fq ? "&" + fq : "");
     return api("GET", path).then(function (j) {
       if (mine !== asked) return;
       items = offset ? items.concat(j.items) : j.items;
@@ -157,7 +157,7 @@ ${ROW_JS}
     });
     $("more").hidden = nextOffset === null;
     var fq = filterQuery();
-    $("dl").href = "/api/history.csv" + (fq ? "?" + fq : "");
+    $("dl").href = "/api/history.csv?sort=" + F.sort + (fq ? "&" + fq : "");
   }
 
   function shipRow(s) {
@@ -250,7 +250,7 @@ ${ROW_JS}
     clearTimeout(typing);
     open = {};
     if (now) reload(); else typing = setTimeout(reload, 250);
-  });
+  }, "history", [["new", "Newest first"], ["old", "Oldest first"]]);
   $("more").addEventListener("click", function () {
     if (nextOffset === null) return;
     $("more").disabled = true;
