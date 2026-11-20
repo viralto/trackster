@@ -44,7 +44,7 @@ ${sidebar("history")}
     <div class="find">
       <label class="sr" for="q">Search history</label>
       <input type="text" id="q" autocomplete="off" spellcheck="false"
-        placeholder="Search by tracking number, note, carrier, place or country code (DE, US)">
+        placeholder="Search by customer or note, tracking number, carrier, place or country code (DE, US)">
       <a class="dl" id="dl" href="/api/history.csv">Download as spreadsheet</a>
     </div>
     <div class="meta" id="meta" role="status">&nbsp;</div>
@@ -264,6 +264,9 @@ ${ROW_JS}
   function refreshStats() {
     return api("GET", "/api/shipments").then(function (j) { showStats(j.shipments); }).catch(function () {});
   }
+  // The board's find box can hand a search over: /history?q=acme
+  var handed = new URLSearchParams(location.search).get("q");
+  if (handed) { query = handed.trim().slice(0, 60); $("q").value = query; }
   reload();
   refreshStats();
 })();

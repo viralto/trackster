@@ -170,7 +170,11 @@ function historyFilter(url) {
   const q = (url.searchParams.get("q") || "").trim().slice(0, 60);
   let where = "(delivered_at IS NOT NULL OR archived = 1)";
   const binds = [];
-  if (q) {
+  if (/^[a-z]{2}$/i.test(q)) {
+    // Two letters on their own mean a country code. Otherwise "de" would also find every FedEx parcel.
+    where += " AND UPPER(dest_country) = ?";
+    binds.push(q.toUpperCase());
+  } else if (q) {
     const like = "%" + q.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
     where +=
       " AND (tracking_number LIKE ? ESCAPE '\\' OR label LIKE ? ESCAPE '\\' OR dest_country LIKE ? ESCAPE '\\'" +

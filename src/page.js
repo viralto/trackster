@@ -22,6 +22,9 @@ ${THEME_CSS}
   .notice { margin-top: 10px; font-size: 14px; }
   .notice ul { margin: 4px 0 0; padding-left: 18px; }
   .err { color: var(--red-ink); }
+  .findbar { padding: 14px 26px; }
+  .findbar input[type=text] { width: 100%; padding: 10px 12px; }
+  .findbar .meta { margin-top: 8px; }
 
   .group { margin-top: 24px; padding: 6px 26px 10px; }
   .grouphead { display: flex; align-items: center; gap: 10px; padding: 16px 0 14px; border-bottom: 1px solid var(--line);
@@ -61,6 +64,13 @@ ${sidebar("board")}
       <span class="meta" id="quota"></span>
     </div>
     <div class="notice" id="addNotice" role="status"></div>
+  </section>
+
+  <section class="card section findbar" aria-label="Find a shipment">
+    <label class="sr" for="find">Find a shipment on the board</label>
+    <input type="text" id="find" autocomplete="off" spellcheck="false"
+      placeholder="Find by customer or note, tracking number, carrier, place or country code (DE, US)">
+    <div class="meta" id="findMeta" role="status" hidden></div>
   </section>
 
   <section class="card group" id="sec-open">
@@ -174,8 +184,20 @@ ${WHO_JS}
     }, veryNew ? 20000 : 120000);
   }
 
+  // The find box narrows what is on the board. It looks at the note (where the
+  // customer usually lives), the tracking number, carrier, country and last scan place.
+  var term = "";
+  function matches(s) {
+    if (!term) return true;
+    // Two letters on their own mean a country code. Otherwise "de" would also find every FedEx parcel.
+    if (/^[a-z]{2}$/.test(term)) return String(s.destCountry || "").toLowerCase() === term;
+    var hay = [s.label, s.trackingNumber, s.courier, s.destCountry, s.lastEventLocation].join(" ").toLowerCase();
+    return hay.indexOf(term) !== -1;
+  }
+
   function render() {
     var groups = { open: [], done: [] };
+    var found = 0;
     data.shipments.forEach(function (s) {
       var def = STATE[s.state] || STATE.transit;
       groups[def.group].push(s);
@@ -190,18 +212,23 @@ ${WHO_JS}
       var box = $("g-" + g);
       box.textContent = "";
       var list = groups[g];
+      var total = list.length;
+      list = list.filter(matches);
       if (g === "open") {
-        var total = list.length;
         if (statFilter) list = list.filter(function (s) { return statFilter.states.indexOf(s.state) !== -1; });
         $("openTitle").textContent = statFilter ? statFilter.label : "Open shipments";
-        $("c-open").textContent = statFilter ? list.length + " of " + total : String(total);
+        $("c-open").textContent = statFilter || term ? list.length + " of " + total : String(total);
         $("showAll").hidden = !statFilter;
       } else {
-        $("c-" + g).textContent = list.length;
+        $("c-" + g).textContent = term ? list.length + " of " + total : String(total);
+        if (term && list.length) setDone(true);
       }
+      found += list.length;
       if (!list.length) {
-        box.appendChild(el("div", "empty", g === "done" ? "Nothing delivered in the last 14 days." :
-          statFilter ? "No shipments are in this state right now." : "No open shipments."));
+        box.appendChild(el("div", "empty", term
+          ? (g === "done" ? "Nothing delivered in the last 14 days matches." : "No open shipments match.")
+          : g === "done" ? "Nothing delivered in the last 14 days." :
+            statFilter ? "No shipments are in this state right now." : "No open shipments."));
       }
       list.forEach(function (s) { box.appendChild(shipRow(s)); });
     });
@@ -217,6 +244,16 @@ ${WHO_JS}
     $("quota").textContent = data.quota.used >= data.quota.limit
       ? "This month's tracking allowance has been used up. New shipments can be added again next month." : "";
     $("addBtn").disabled = data.quota.used >= data.quota.limit;
+    var fm = $("findMeta");
+    fm.hidden = !term;
+    if (term) {
+      fm.textContent = (found === 1 ? "1 shipment on the board matches. " : found + " shipments on the board match. ") +
+        "Older ones are in ";
+      var a = el("a", null, "History");
+      a.href = "/history?q=" + encodeURIComponent($("find").value.trim());
+      fm.appendChild(a);
+      fm.appendChild(document.createTextNode("."));
+    }
     chaseNewOnes();
     showUser(data.user);
     showStats(data.shipments);
@@ -409,6 +446,11 @@ ${ROW_JS}
       return;
     }
     submit(items);
+  });
+
+  $("find").addEventListener("input", function () {
+    term = $("find").value.trim().toLowerCase();
+    if (data) render();
   });
 
   $("toggleDone").addEventListener("click", function () {
