@@ -911,7 +911,7 @@ async function testEmail(env, user) {
     ],
     boardUrl: (env.BOARD_URL || "").replace(/\/+$/, ""),
   });
-  email.subject = "[Shipments] Test email";
+  email.subject = "[Dot Logistics] Test email";
   const failures = await sendEmail(env, settings.recipients, email);
   return json({ sent: settings.recipients.length - failures.length, failures });
 }

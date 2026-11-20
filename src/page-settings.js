@@ -8,7 +8,7 @@ export const SETTINGS_PAGE = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Alert settings</title>
+<title>Dot Logistics: Alert settings</title>
 ${THEME_HEAD}
 <style>
 ${THEME_CSS}

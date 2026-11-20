@@ -9,7 +9,7 @@ export const PAGE = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Shipments</title>
+<title>Dot Logistics: Shipments</title>
 ${THEME_HEAD}
 <style>
 ${THEME_CSS}

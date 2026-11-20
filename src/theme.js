@@ -29,7 +29,7 @@ export const THEME_CSS = `
   .side { background: var(--card); border-right: 1px solid var(--line); display: flex; flex-direction: column;
     position: sticky; top: 0; height: 100vh; overflow-y: auto; }
   .brand { padding: 30px 28px 26px; border-bottom: 1px solid var(--line); }
-  .brand .name { color: var(--teal); font-size: 30px; font-weight: 300; letter-spacing: .04em; line-height: 1.1; text-transform: uppercase; }
+  .brand .name { color: var(--teal); font-size: 25px; white-space: nowrap; font-weight: 300; letter-spacing: .04em; line-height: 1.1; text-transform: uppercase; }
   .brand .sub { color: var(--ink); font-size: 13px; margin-top: 2px; }
   .who { display: flex; align-items: center; gap: 14px; padding: 18px 24px; border-bottom: 1px solid var(--line); }
   .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--teal); color: #fff; flex: none;
@@ -338,7 +338,7 @@ const ICON_BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V
 // The left-hand column. active is "add", "board", "history" or "settings".
 export function sidebar(active) {
   return `<aside class="side">
-    <div class="brand"><div class="name">Shipments</div><div class="sub">UPS and FedEx tracking</div></div>
+    <div class="brand"><div class="name">Dot Logistics</div><div class="sub">UPS and FedEx tracking</div></div>
     <div class="who"><div class="avatar" id="avatar"></div><div><div class="n" id="userName">&nbsp;</div><div class="o">Dot Origin</div></div></div>
     <div class="navlabel">Menu</div>
     <nav class="nav" aria-label="Main">

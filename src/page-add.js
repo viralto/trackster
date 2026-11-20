@@ -8,7 +8,7 @@ export const ADD_PAGE = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Add shipments</title>
+<title>Dot Logistics: Add shipments</title>
 ${THEME_HEAD}
 <style>
 ${THEME_CSS}

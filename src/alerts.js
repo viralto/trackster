@@ -183,7 +183,7 @@ export function composeEmail({ raised = [], resolved = [], delivered = [], starr
       : "") +
     "</div>";
 
-  return { subject: "[Shipments] " + subject, text, html };
+  return { subject: "[Dot Logistics] " + subject, text, html };
 }
 
 // Sends to each recipient. Returns the list of failures (empty = all sent).
@@ -193,7 +193,7 @@ export async function sendEmail(env, recipients, email) {
     try {
       await env.EMAIL.send({
         to,
-        from: { email: env.ALERT_FROM, name: "Shipment tracker" },
+        from: { email: env.ALERT_FROM, name: "Dot Logistics" },
         subject: email.subject,
         text: email.text,
         html: email.html,
