@@ -40,7 +40,7 @@ Alerts are sent from `alerts@dot-track.app`. Sending to verified addresses is fr
 
 In `wrangler.toml`:
 
-- `MAX_SHIPMENTS_PER_MONTH`: hard stop on new shipments each calendar month. Set to 10 for the Ship24 free plan.
+- `MAX_SHIPMENTS_PER_MONTH`: hard stop on new shipments each calendar month. Set to 1000 for the Ship24 paid per-shipment plan (10 on the free plan).
 - `ALERT_FROM` and `BOARD_URL`: the sender address for alerts and the link they point back to.
 - `STALL_DAYS` and `CUSTOMS_HOURS`: starting values only. Once the Alert settings page has been saved, the page decides.
 

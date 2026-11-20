@@ -9,7 +9,7 @@ crons = ["*/30 * * * *"]
 [vars]
 # Hard stop on new shipments per calendar month, to protect the Ship24 quota.
 # Free plan = 10. Raise this when the plan is upgraded.
-MAX_SHIPMENTS_PER_MONTH = "10"
+MAX_SHIPMENTS_PER_MONTH = "1000"
 # Starting values only. Once saved on the Settings page, the page wins.
 # Working days without a scan before a shipment is flagged as Stalled.
 STALL_DAYS = "3"
